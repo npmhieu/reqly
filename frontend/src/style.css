@@ -1,0 +1,129 @@
+:root {
+  --background: #ffffff;
+  --foreground: #09090b;
+  --workspace: #f6f7f9;
+  --sidebar: #ffffff;
+
+  --card: #ffffff;
+  --card-foreground: #09090b;
+
+  --popover: #ffffff;
+  --popover-foreground: #09090b;
+
+  --primary: #18181b;
+  --primary-foreground: #fafafa;
+
+  --secondary: #f4f4f5;
+  --secondary-foreground: #18181b;
+
+  --muted: #f4f4f5;
+  --muted-foreground: #71717a;
+
+  --accent: #f4f4f5;
+  --accent-foreground: #18181b;
+
+  --destructive: #ef4444;
+  --destructive-foreground: #fafafa;
+
+  --border: #e4e4e7;
+  --input: #e4e4e7;
+  --ring: #18181b;
+  --ring-soft: rgba(24, 24, 27, 0.12);
+
+  --code-bg: #fbfbfc;
+  --code-fg: #18181b;
+  --destructive-soft: rgba(239, 68, 68, 0.1);
+  --blue: #1d4ed8;
+  --blue-soft: #dbeafe;
+  --green: #15803d;
+  --green-soft: #dcfce7;
+  --amber: #a16207;
+  --amber-soft: #fef3c7;
+  --red: #b91c1c;
+  --red-soft: #fee2e2;
+  --purple: #7e22ce;
+  --purple-soft: #f3e8ff;
+
+  --radius: 0.5rem;
+
+  /* Prism JSON syntax highlighting - One Light */
+  --prism-property: #e45649;
+  --prism-string: #50a14f;
+  --prism-number: #986801;
+  --prism-boolean: #a626a4;
+  --prism-punctuation: #383a42;
+  --prism-operator: #0184bc;
+  --prism-comment: #a0a1a7;
+}
+
+.dark {
+  --background: #09090b;
+  --foreground: #fafafa;
+  --workspace: #0c0c0f;
+  --sidebar: #111114;
+
+  --card: #111114;
+  --card-foreground: #fafafa;
+
+  --popover: #09090b;
+  --popover-foreground: #fafafa;
+
+  --primary: #fafafa;
+  --primary-foreground: #18181b;
+
+  --secondary: #27272a;
+  --secondary-foreground: #fafafa;
+
+  --muted: #27272a;
+  --muted-foreground: #a1a1aa;
+
+  --accent: #27272a;
+  --accent-foreground: #fafafa;
+
+  --destructive: #7f1d1d;
+  --destructive-foreground: #fafafa;
+
+  --border: #27272a;
+  --input: #27272a;
+  --ring: #d4d4d8;
+  --ring-soft: rgba(212, 212, 216, 0.14);
+
+  --code-bg: #09090b;
+  --code-fg: #f4f4f5;
+  --destructive-soft: rgba(127, 29, 29, 0.22);
+  --blue: #93c5fd;
+  --blue-soft: rgba(29, 78, 216, 0.22);
+  --green: #86efac;
+  --green-soft: rgba(21, 128, 61, 0.22);
+  --amber: #fcd34d;
+  --amber-soft: rgba(161, 98, 7, 0.22);
+  --red: #fca5a5;
+  --red-soft: rgba(185, 28, 28, 0.22);
+  --purple: #d8b4fe;
+  --purple-soft: rgba(126, 34, 206, 0.22);
+
+  /* Prism JSON syntax highlighting - One Dark */
+  --prism-property: #e5c07b;
+  --prism-string: #98c379;
+  --prism-number: #d19a66;
+  --prism-boolean: #c678dd;
+  --prism-punctuation: #abb2bf;
+  --prism-operator: #56b6c2;
+  --prism-comment: #5c6370;
+}
+
+* {
+  box-sizing: border-box;
+  border-color: var(--border);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+
+#root {
+  height: 100vh;
+}

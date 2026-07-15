@@ -1,0 +1,19 @@
+{
+  "$schema": "https://wails.io/schemas/config.v2.json",
+  "name": "reqly",
+  "outputfilename": "reqly",
+  "frontend:install": "npm install",
+  "frontend:build": "npm run build",
+  "frontend:dev:watcher": "npm run dev",
+  "frontend:dev:serverUrl": "auto",
+  "author": {
+    "name": "npmhieu",
+    "email": "npmhieu@gmail.com"
+  },
+  "info": {
+    "productName": "Reqly",
+    "productVersion": "v1.0.0-rc",
+    "comments": "A lightning-fast, privacy-first desktop REST API client."
+  },
+  "version": "v1.0.0-rc"
+}
