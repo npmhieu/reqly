@@ -5,15 +5,21 @@ import {db} from '../models';
 
 export function DeleteHistory(arg1:number):Promise<void>;
 
+export function DeleteTag(arg1:string):Promise<void>;
+
 export function ExecuteRequest(arg1:engine.HTTPRequest,arg2:Array<string>):Promise<engine.HTTPResponse>;
 
 export function GetAllTags():Promise<Array<string>>;
 
 export function GetHistory(arg1:string,arg2:number,arg3:number):Promise<Array<db.RequestHistory>>;
 
+export function GetTagsWithCount():Promise<Array<db.TagWithCount>>;
+
 export function ParseCurl(arg1:string):Promise<engine.HTTPRequest>;
 
 export function ParseHttpEntry(arg1:string):Promise<engine.HTTPRequest>;
+
+export function RenameTag(arg1:string,arg2:string):Promise<void>;
 
 export function SelectFile():Promise<string>;
 

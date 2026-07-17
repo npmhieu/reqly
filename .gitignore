@@ -3,3 +3,8 @@ node_modules
 frontend/dist
 
 .idea/*
+tmp/
+.DS_Store
+build/.DS_Store
+assets/.DS_Store
+

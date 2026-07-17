@@ -6,6 +6,10 @@ export function DeleteHistory(arg1) {
   return window['go']['main']['App']['DeleteHistory'](arg1);
 }
 
+export function DeleteTag(arg1) {
+  return window['go']['main']['App']['DeleteTag'](arg1);
+}
+
 export function ExecuteRequest(arg1, arg2) {
   return window['go']['main']['App']['ExecuteRequest'](arg1, arg2);
 }
@@ -18,12 +22,20 @@ export function GetHistory(arg1, arg2, arg3) {
   return window['go']['main']['App']['GetHistory'](arg1, arg2, arg3);
 }
 
+export function GetTagsWithCount() {
+  return window['go']['main']['App']['GetTagsWithCount']();
+}
+
 export function ParseCurl(arg1) {
   return window['go']['main']['App']['ParseCurl'](arg1);
 }
 
 export function ParseHttpEntry(arg1) {
   return window['go']['main']['App']['ParseHttpEntry'](arg1);
+}
+
+export function RenameTag(arg1, arg2) {
+  return window['go']['main']['App']['RenameTag'](arg1, arg2);
 }
 
 export function SelectFile() {
