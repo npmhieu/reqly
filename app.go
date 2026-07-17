@@ -110,6 +110,21 @@ func (a *App) UpdateRequestTags(requestID int64, tags []string) error {
 	return a.db.UpdateRequestTags(requestID, tags)
 }
 
+// GetTagsWithCount retrieves all tags with their usage count
+func (a *App) GetTagsWithCount() ([]db.TagWithCount, error) {
+	return a.db.GetTagsWithCount()
+}
+
+// RenameTag renames a tag and merges it if the new name already exists
+func (a *App) RenameTag(oldName, newName string) error {
+	return a.db.RenameTag(oldName, newName)
+}
+
+// DeleteTag deletes a tag entirely
+func (a *App) DeleteTag(name string) error {
+	return a.db.DeleteTag(name)
+}
+
 // ParseCurl parses a raw cURL command
 func (a *App) ParseCurl(curlCmd string) (*engine.HTTPRequest, error) {
 	log.Printf("[Go Backend] Received ParseCurl request with input length %d", len(curlCmd))

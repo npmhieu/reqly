@@ -16,6 +16,8 @@ import {
   X,
   Code,
   Copy,
+  Settings,
+  MoreHorizontal,
 } from "lucide-react";
 import "./App.css";
 import { useTheme } from "./components/ThemeProvider";
@@ -24,12 +26,15 @@ import {
   GetHistory,
   DeleteHistory,
   GetAllTags,
+  GetTagsWithCount,
+  RenameTag,
+  DeleteTag,
   UpdateRequestTags,
   ParseCurl,
   ParseHttpEntry,
   SelectFile,
 } from "../wailsjs/go/main/App";
-import { engine } from "../wailsjs/go/models";
+import { engine, db } from "../wailsjs/go/models";
 import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from "./components/Tooltip";
 import CodeMirror from '@uiw/react-codemirror';
 import { json } from '@codemirror/lang-json';
@@ -140,12 +145,36 @@ export default function App() {
   const [isHistoryLoading, setIsHistoryLoading] = useState(false);
   const isHistoryLoadingRef = useRef(false);
   const [allTags, setAllTags] = useState<string[]>([]);
+  const [tagsWithCount, setTagsWithCount] = useState<db.TagWithCount[]>([]);
+  const [isTagManagerOpen, setIsTagManagerOpen] = useState(false);
+  const [editingTagName, setEditingTagName] = useState<string | null>(null);
+  const [editingTagDraft, setEditingTagDraft] = useState("");
   const [selectedTag, setSelectedTag] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
   const [showCurl, setShowCurl] = useState(false);
   const [isCurlCopied, setIsCurlCopied] = useState(false);
+  
+  // Tag input row state
+  const [originalTags, setOriginalTags] = useState("");
+  const [isEditingDraftTags, setIsEditingDraftTags] = useState(false);
 
   const [isResizing, setIsResizing] = useState(false);
+  const [isMoreTagsOpen, setIsMoreTagsOpen] = useState(false);
+  const moreTagsRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (moreTagsRef.current && !moreTagsRef.current.contains(event.target as Node)) {
+        setIsMoreTagsOpen(false);
+      }
+    };
+    if (isMoreTagsOpen) {
+      document.addEventListener("mousedown", handleClickOutside);
+    }
+    return () => {
+      document.addEventListener("mousedown", handleClickOutside);
+    };
+  }, [isMoreTagsOpen]);
   const reqConfigRef = useRef<HTMLElement>(null);
   const isDraggingRef = useRef(false);
 
@@ -245,11 +274,44 @@ export default function App() {
 
   const loadTags = useCallback(async () => {
     try {
-      setAllTags((await GetAllTags()) || []);
+      const tagsList = (await GetAllTags()) || [];
+      setAllTags(tagsList);
+      const withCount = (await GetTagsWithCount()) || [];
+      setTagsWithCount(withCount);
     } catch (err) {
       console.error("Failed to load tags:", err);
     }
   }, []);
+
+  const handleSaveTagEdit = async (oldName: string) => {
+    if (!editingTagDraft || editingTagDraft.trim() === "") {
+      setEditingTagName(null);
+      return;
+    }
+    const newName = editingTagDraft.trim();
+    if (newName !== oldName) {
+      try {
+        await RenameTag(oldName, newName);
+        void loadTags();
+        reloadHistory();
+      } catch (err) {
+        console.error("Failed to rename tag:", err);
+      }
+    }
+    setEditingTagName(null);
+  };
+
+  const handleDeleteTag = async (name: string) => {
+    if (confirm(`Are you sure you want to delete the tag "${name}"? This will remove it from all associated requests.`)) {
+      try {
+        await DeleteTag(name);
+        void loadTags();
+        reloadHistory();
+      } catch (err) {
+        console.error("Failed to delete tag:", err);
+      }
+    }
+  };
 
   const loadHistoryPage = useCallback(
     async (page: number, replace = false) => {
@@ -280,8 +342,11 @@ export default function App() {
 
   useEffect(() => {
     reloadHistory();
+  }, [reloadHistory]);
+
+  useEffect(() => {
     void loadTags();
-  }, [reloadHistory, loadTags]);
+  }, [loadTags]);
 
   const filteredHistory = useMemo(() => {
     if (!searchQuery.trim()) return history;
@@ -313,6 +378,9 @@ export default function App() {
       }
     });
 
+    if (isEditingDraftTags) {
+      setIsEditingDraftTags(false);
+    }
     const parsedTags = tags
       .split(",")
       .map((t) => t.trim())
@@ -580,29 +648,90 @@ export default function App() {
           </section>
         )}
 
-        <div className="sidebar-filter">
+          <div className="sidebar-filter">
           <div className="input-with-icon">
             <Search size={15} />
             <input
-              className="input"
+              className="input small"
               placeholder="Search loaded history..."
               value={searchQuery}
               onChange={(event) => setSearchQuery(event.target.value)}
             />
           </div>
+
           <div className="tag-list">
-            <button className={selectedTag === "" ? "tag-chip active" : "tag-chip"} onClick={() => setSelectedTag("")}>
-              All
-            </button>
-            {allTags.map((tagName) => (
-              <button
-                key={tagName}
-                className={selectedTag === tagName ? "tag-chip active" : "tag-chip"}
-                onClick={() => setSelectedTag(tagName)}
-              >
-                {tagName}
+            <div className="tag-chips-container">
+              <button className={selectedTag === "" ? "tag-chip active" : "tag-chip"} onClick={() => setSelectedTag("")}>
+                All
               </button>
-            ))}
+              {allTags.slice(0, 3).map((tagName) => (
+                <button
+                  key={tagName}
+                  className={selectedTag === tagName ? "tag-chip active" : "tag-chip"}
+                  onClick={() => setSelectedTag(tagName)}
+                >
+                  {tagName}
+                </button>
+              ))}
+              {allTags.length > 3 && (
+                <div style={{ position: 'relative' }} ref={moreTagsRef}>
+                  <button 
+                    className="tag-action" 
+                    onClick={() => setIsMoreTagsOpen(!isMoreTagsOpen)}
+                    style={{ flexShrink: 0 }}
+                    title="More Tags"
+                  >
+                    <MoreHorizontal size={14} />
+                  </button>
+                  {isMoreTagsOpen && (
+                    <div style={{
+                      position: 'absolute',
+                      top: '100%',
+                      left: 0,
+                      marginTop: '4px',
+                      background: 'var(--background)',
+                      border: '1px solid var(--border)',
+                      borderRadius: 'var(--radius)',
+                      boxShadow: '0 8px 16px rgba(0,0,0,0.2)',
+                      padding: '6px',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '4px',
+                      zIndex: 100,
+                      minWidth: '150px',
+                      maxHeight: '250px',
+                      overflowY: 'auto'
+                    }}>
+                      {allTags.slice(3).map(tagName => (
+                        <button
+                          key={tagName}
+                          className={selectedTag === tagName ? "tag-chip active" : "tag-chip"}
+                          style={{ 
+                            width: '100%', 
+                            justifyContent: 'flex-start', 
+                            border: 'none',
+                            cursor: 'pointer',
+                            padding: '4px 8px',
+                            background: selectedTag === tagName ? 'var(--primary)' : 'transparent',
+                            color: selectedTag === tagName ? 'var(--primary-foreground)' : 'var(--foreground)'
+                          }}
+                          onClick={() => {
+                            setAllTags(prev => [tagName, ...prev.filter(t => t !== tagName)]);
+                            setSelectedTag(tagName);
+                            setIsMoreTagsOpen(false);
+                          }}
+                        >
+                          {tagName}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+            <button className="tag-action" onClick={() => setIsTagManagerOpen(true)} title="Manage Tags" style={{ marginLeft: '8px', flexShrink: 0 }}>
+              <Settings size={14} />
+            </button>
           </div>
         </div>
 
@@ -724,15 +853,73 @@ export default function App() {
             </button>
           </div>
 
-          <div className="tag-input-row">
+          <form 
+            className="tag-input-row"
+            onSubmit={(e) => {
+              e.preventDefault();
+              setIsEditingDraftTags(false);
+              (document.activeElement as HTMLElement)?.blur();
+            }}
+            onBlur={(e) => {
+              if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+                setIsEditingDraftTags(false);
+              }
+            }}
+          >
             <Tag size={15} />
             <input
               className="input small"
               placeholder="Associate tags: auth, production"
               value={tags}
+              onFocus={() => {
+                if (!isEditingDraftTags) {
+                  setIsEditingDraftTags(true);
+                  setOriginalTags(tags);
+                }
+              }}
               onChange={(event) => setTags(event.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Escape") {
+                  e.preventDefault();
+                  setIsEditingDraftTags(false);
+                  setTags(originalTags);
+                  e.currentTarget.blur();
+                }
+              }}
             />
-          </div>
+            {isEditingDraftTags && (
+              <div style={{ display: 'flex', gap: '4px' }}>
+                <button 
+                  className="button outline small" 
+                  type="button" 
+                  onClick={() => {
+                    setIsEditingDraftTags(false);
+                    setTags(originalTags);
+                  }}
+                >
+                  Cancel
+                </button>
+                <button 
+                  className="button primary small" 
+                  type="submit"
+                >
+                  Save
+                </button>
+              </div>
+            )}
+            {!isEditingDraftTags && (
+              <TooltipProvider delayDuration={300}>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button type="button" className="button ghost small" onClick={() => setShowCurl(true)} style={{ marginLeft: 'auto' }}>
+                      <Code size={16} />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent side="top">Show equivalent cURL</TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            )}
+          </form>
         </section>
 
         <section ref={reqConfigRef} className="panel request-config">
@@ -754,16 +941,6 @@ export default function App() {
                   Add header
                 </button>
               )}
-              <TooltipProvider delayDuration={300}>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <button className="button ghost small" onClick={() => setShowCurl(true)}>
-                      <Code size={16} />
-                    </button>
-                  </TooltipTrigger>
-                  <TooltipContent>Show cURL</TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
             </div>
           </div>
 
@@ -1084,6 +1261,65 @@ export default function App() {
         </div>
       </div>
     </div>
+
+      {isTagManagerOpen && (
+        <div className="modal-overlay" onClick={() => setIsTagManagerOpen(false)}>
+          <div className="modal-content tag-manager-modal" onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3>Manage Tags</h3>
+              <button className="icon-button" onClick={() => setIsTagManagerOpen(false)}>
+                <X size={16} />
+              </button>
+            </div>
+            <div className="modal-body">
+              <div style={{ marginBottom: '12px', fontSize: '13px', color: 'var(--muted-foreground)' }}>
+                Total tags: {tagsWithCount.length}
+              </div>
+              {tagsWithCount.length === 0 ? (
+                <div className="empty-state compact">No tags found</div>
+              ) : (
+                <div className="tag-manager-list">
+                  {tagsWithCount.map((tag) => (
+                    <div key={tag.name} className="tag-manager-item">
+                      {editingTagName === tag.name ? (
+                        <div className="tag-edit-row">
+                          <input
+                            autoFocus
+                            className="input small"
+                            value={editingTagDraft}
+                            onChange={(e) => setEditingTagDraft(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') handleSaveTagEdit(tag.name);
+                              if (e.key === 'Escape') setEditingTagName(null);
+                            }}
+                          />
+                          <button className="icon-button" onClick={() => handleSaveTagEdit(tag.name)} title="Save"><Check size={14} /></button>
+                          <button className="icon-button" onClick={() => setEditingTagName(null)} title="Cancel"><X size={14} /></button>
+                        </div>
+                      ) : (
+                        <>
+                          <div className="tag-info">
+                            <span className="tag-name">{tag.name}</span>
+                            <span className="tag-count">{tag.count} {tag.count === 1 ? 'request' : 'requests'}</span>
+                          </div>
+                          <div className="tag-actions">
+                            <button className="icon-button" onClick={() => { setEditingTagName(tag.name); setEditingTagDraft(tag.name); }} title="Edit Tag">
+                              <Settings size={14} />
+                            </button>
+                            <button className="icon-button danger-hover" onClick={() => handleDeleteTag(tag.name)} title="Delete Tag">
+                              <Trash2 size={14} />
+                            </button>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </TooltipProvider>
   );
 }

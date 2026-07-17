@@ -336,3 +336,99 @@ func (m *DBManager) UpdateRequestTags(requestID int64, tags []string) error {
 
 	return tx.Commit()
 }
+
+type TagWithCount struct {
+	Name  string `json:"name"`
+	Count int    `json:"count"`
+}
+
+func (m *DBManager) GetTagsWithCount() ([]TagWithCount, error) {
+	query := `SELECT t.name, COUNT(rt.request_id) 
+			  FROM tags t 
+			  LEFT JOIN request_tags rt ON t.id = rt.tag_id 
+			  GROUP BY t.id 
+			  ORDER BY t.name ASC`
+	rows, err := m.db.Query(query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var tags []TagWithCount
+	for rows.Next() {
+		var t TagWithCount
+		if err := rows.Scan(&t.Name, &t.Count); err != nil {
+			return nil, err
+		}
+		tags = append(tags, t)
+	}
+	return tags, nil
+}
+
+func (m *DBManager) RenameTag(oldName, newName string) error {
+	oldName = strings.TrimSpace(strings.ToLower(oldName))
+	newName = strings.TrimSpace(strings.ToLower(newName))
+	if oldName == "" || newName == "" {
+		return fmt.Errorf("tag name cannot be empty")
+	}
+
+	tx, err := m.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	// Check if newName already exists
+	var newTagID int64
+	err = tx.QueryRow(`SELECT id FROM tags WHERE name = ?`, newName).Scan(&newTagID)
+	
+	if err != nil && err != sql.ErrNoRows {
+		return err
+	}
+
+	if err == sql.ErrNoRows {
+		// newName doesn't exist, simply update the old tag
+		_, err = tx.Exec(`UPDATE tags SET name = ? WHERE name = ?`, newName, oldName)
+		if err != nil {
+			return err
+		}
+	} else {
+		// newName exists, we need to merge
+		var oldTagID int64
+		err = tx.QueryRow(`SELECT id FROM tags WHERE name = ?`, oldName).Scan(&oldTagID)
+		if err != nil {
+			if err == sql.ErrNoRows {
+				return nil // old tag doesn't exist, nothing to do
+			}
+			return err
+		}
+
+		// Update all request_tags pointing to oldTagID to point to newTagID
+		_, err = tx.Exec(`UPDATE OR IGNORE request_tags SET tag_id = ? WHERE tag_id = ?`, newTagID, oldTagID)
+		if err != nil {
+			return err
+		}
+
+		// Delete oldTagID from request_tags (for any conflicts ignored above)
+		_, err = tx.Exec(`DELETE FROM request_tags WHERE tag_id = ?`, oldTagID)
+		if err != nil {
+			return err
+		}
+
+		// Delete old tag
+		_, err = tx.Exec(`DELETE FROM tags WHERE id = ?`, oldTagID)
+		if err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+func (m *DBManager) DeleteTag(name string) error {
+	name = strings.TrimSpace(strings.ToLower(name))
+	if name == "" {
+		return nil
+	}
+	_, err := m.db.Exec(`DELETE FROM tags WHERE name = ?`, name)
+	return err
+}
