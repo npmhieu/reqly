@@ -149,6 +149,7 @@ export default function App() {
   const [isTagManagerOpen, setIsTagManagerOpen] = useState(false);
   const [editingTagName, setEditingTagName] = useState<string | null>(null);
   const [editingTagDraft, setEditingTagDraft] = useState("");
+  const [confirmDeleteTagName, setConfirmDeleteTagName] = useState<string | null>(null);
   const [selectedTag, setSelectedTag] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
   const [showCurl, setShowCurl] = useState(false);
@@ -302,14 +303,13 @@ export default function App() {
   };
 
   const handleDeleteTag = async (name: string) => {
-    if (confirm(`Are you sure you want to delete the tag "${name}"? This will remove it from all associated requests.`)) {
-      try {
-        await DeleteTag(name);
-        void loadTags();
-        reloadHistory();
-      } catch (err) {
-        console.error("Failed to delete tag:", err);
-      }
+    try {
+      await DeleteTag(name);
+      setConfirmDeleteTagName(null);
+      void loadTags();
+      reloadHistory();
+    } catch (err) {
+      console.error("Failed to delete tag:", err);
     }
   };
 
@@ -1302,14 +1302,22 @@ export default function App() {
                             <span className="tag-name">{tag.name}</span>
                             <span className="tag-count">{tag.count} {tag.count === 1 ? 'request' : 'requests'}</span>
                           </div>
-                          <div className="tag-actions">
-                            <button className="icon-button" onClick={() => { setEditingTagName(tag.name); setEditingTagDraft(tag.name); }} title="Edit Tag">
-                              <Settings size={14} />
-                            </button>
-                            <button className="icon-button danger-hover" onClick={() => handleDeleteTag(tag.name)} title="Delete Tag">
-                              <Trash2 size={14} />
-                            </button>
-                          </div>
+                          {confirmDeleteTagName === tag.name ? (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                              <span style={{ fontSize: '12px', color: 'var(--muted-foreground)' }}>Delete?</span>
+                              <button className="button primary small" onClick={() => handleDeleteTag(tag.name)}>Yes</button>
+                              <button className="button outline small" onClick={() => setConfirmDeleteTagName(null)}>No</button>
+                            </div>
+                          ) : (
+                            <div className="tag-actions">
+                              <button className="icon-button" onClick={() => { setEditingTagName(tag.name); setEditingTagDraft(tag.name); }} title="Edit Tag">
+                                <Settings size={14} />
+                              </button>
+                              <button className="icon-button danger-hover" onClick={() => setConfirmDeleteTagName(tag.name)} title="Delete Tag">
+                                <Trash2 size={14} />
+                              </button>
+                            </div>
+                          )}
                         </>
                       )}
                     </div>
