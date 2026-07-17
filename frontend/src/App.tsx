@@ -18,6 +18,7 @@ import {
   Copy,
   Settings,
   MoreHorizontal,
+  Pencil,
 } from "lucide-react";
 import "./App.css";
 import { useTheme } from "./components/ThemeProvider";
@@ -347,6 +348,19 @@ export default function App() {
   useEffect(() => {
     void loadTags();
   }, [loadTags]);
+
+  useEffect(() => {
+    if (!isTagManagerOpen) return;
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setIsTagManagerOpen(false);
+        setEditingTagName(null);
+        setConfirmDeleteTagName(null);
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [isTagManagerOpen]);
 
   const filteredHistory = useMemo(() => {
     if (!searchQuery.trim()) return history;
@@ -1311,7 +1325,7 @@ export default function App() {
                           ) : (
                             <div className="tag-actions">
                               <button className="icon-button" onClick={() => { setEditingTagName(tag.name); setEditingTagDraft(tag.name); }} title="Edit Tag">
-                                <Settings size={14} />
+                                <Pencil size={14} />
                               </button>
                               <button className="icon-button danger-hover" onClick={() => setConfirmDeleteTagName(tag.name)} title="Delete Tag">
                                 <Trash2 size={14} />
