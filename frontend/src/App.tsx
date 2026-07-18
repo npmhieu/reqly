@@ -40,6 +40,7 @@ import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from "./comp
 import CodeMirror from '@uiw/react-codemirror';
 import { json } from '@codemirror/lang-json';
 import { oneDark } from '@codemirror/theme-one-dark';
+import { Modal } from "./components/Modal";
 
 const PAGE_SIZE = 50;
 const MAX_URL_TOOLTIP_LENGTH = 500;
@@ -348,19 +349,6 @@ export default function App() {
   useEffect(() => {
     void loadTags();
   }, [loadTags]);
-
-  useEffect(() => {
-    if (!isTagManagerOpen) return;
-    const handler = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        setIsTagManagerOpen(false);
-        setEditingTagName(null);
-        setConfirmDeleteTagName(null);
-      }
-    };
-    window.addEventListener('keydown', handler);
-    return () => window.removeEventListener('keydown', handler);
-  }, [isTagManagerOpen]);
 
   const filteredHistory = useMemo(() => {
     if (!searchQuery.trim()) return history;
@@ -744,7 +732,7 @@ export default function App() {
               )}
             </div>
             <button className="tag-action" onClick={() => setIsTagManagerOpen(true)} title="Manage Tags" style={{ marginLeft: '8px', flexShrink: 0 }}>
-              <Settings size={14} />
+              <Pencil size={14} />
             </button>
           </div>
         </div>
@@ -1276,72 +1264,69 @@ export default function App() {
       </div>
     </div>
 
-      {isTagManagerOpen && (
-        <div className="modal-overlay" onClick={() => setIsTagManagerOpen(false)}>
-          <div className="modal-content tag-manager-modal" onClick={e => e.stopPropagation()}>
-            <div className="modal-header">
-              <h3>Manage Tags</h3>
-              <button className="icon-button" onClick={() => setIsTagManagerOpen(false)}>
-                <X size={16} />
-              </button>
-            </div>
-            <div className="modal-body">
-              <div style={{ marginBottom: '12px', fontSize: '13px', color: 'var(--muted-foreground)' }}>
-                Total tags: {tagsWithCount.length}
-              </div>
-              {tagsWithCount.length === 0 ? (
-                <div className="empty-state compact">No tags found</div>
-              ) : (
-                <div className="tag-manager-list">
-                  {tagsWithCount.map((tag) => (
-                    <div key={tag.name} className="tag-manager-item">
-                      {editingTagName === tag.name ? (
-                        <div className="tag-edit-row">
-                          <input
-                            autoFocus
-                            className="input small"
-                            value={editingTagDraft}
-                            onChange={(e) => setEditingTagDraft(e.target.value)}
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter') handleSaveTagEdit(tag.name);
-                              if (e.key === 'Escape') setEditingTagName(null);
-                            }}
-                          />
-                          <button className="icon-button" onClick={() => handleSaveTagEdit(tag.name)} title="Save"><Check size={14} /></button>
-                          <button className="icon-button" onClick={() => setEditingTagName(null)} title="Cancel"><X size={14} /></button>
-                        </div>
-                      ) : (
-                        <>
-                          <div className="tag-info">
-                            <span className="tag-name">{tag.name}</span>
-                            <span className="tag-count">{tag.count} {tag.count === 1 ? 'request' : 'requests'}</span>
-                          </div>
-                          {confirmDeleteTagName === tag.name ? (
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                              <span style={{ fontSize: '12px', color: 'var(--muted-foreground)' }}>Delete?</span>
-                              <button className="button primary small" onClick={() => handleDeleteTag(tag.name)}>Yes</button>
-                              <button className="button outline small" onClick={() => setConfirmDeleteTagName(null)}>No</button>
-                            </div>
-                          ) : (
-                            <div className="tag-actions">
-                              <button className="icon-button" onClick={() => { setEditingTagName(tag.name); setEditingTagDraft(tag.name); }} title="Edit Tag">
-                                <Pencil size={14} />
-                              </button>
-                              <button className="icon-button danger-hover" onClick={() => setConfirmDeleteTagName(tag.name)} title="Delete Tag">
-                                <Trash2 size={14} />
-                              </button>
-                            </div>
-                          )}
-                        </>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
+      <Modal
+        isOpen={isTagManagerOpen}
+        onClose={() => {
+          setIsTagManagerOpen(false);
+          setEditingTagName(null);
+          setConfirmDeleteTagName(null);
+        }}
+        title="Manage Tags"
+        className="tag-manager-modal"
+      >
+        <div style={{ marginBottom: '12px', fontSize: '13px', color: 'var(--muted-foreground)' }}>
+          Total tags: {tagsWithCount.length}
         </div>
-      )}
+        {tagsWithCount.length === 0 ? (
+          <div className="empty-state compact">No tags found</div>
+        ) : (
+          <div className="tag-manager-list">
+            {tagsWithCount.map((tag) => (
+              <div key={tag.name} className="tag-manager-item">
+                {editingTagName === tag.name ? (
+                  <div className="tag-edit-row">
+                    <input
+                      autoFocus
+                      className="input small"
+                      value={editingTagDraft}
+                      onChange={(e) => setEditingTagDraft(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') handleSaveTagEdit(tag.name);
+                        if (e.key === 'Escape') setEditingTagName(null);
+                      }}
+                    />
+                    <button className="icon-button" onClick={() => handleSaveTagEdit(tag.name)} title="Save"><Check size={14} /></button>
+                    <button className="icon-button" onClick={() => setEditingTagName(null)} title="Cancel"><X size={14} /></button>
+                  </div>
+                ) : (
+                  <>
+                    <div className="tag-info">
+                      <span className="tag-name">{tag.name}</span>
+                      <span className="tag-count">{tag.count} {tag.count === 1 ? 'request' : 'requests'}</span>
+                    </div>
+                    {confirmDeleteTagName === tag.name ? (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <span style={{ fontSize: '12px', color: 'var(--muted-foreground)' }}>Delete?</span>
+                        <button className="button primary small" onClick={() => handleDeleteTag(tag.name)}>Yes</button>
+                        <button className="button outline small" onClick={() => setConfirmDeleteTagName(null)}>No</button>
+                      </div>
+                    ) : (
+                      <div className="tag-actions">
+                        <button className="icon-button" onClick={() => { setEditingTagName(tag.name); setEditingTagDraft(tag.name); }} title="Edit Tag">
+                          <Pencil size={14} />
+                        </button>
+                        <button className="icon-button danger-hover" onClick={() => setConfirmDeleteTagName(tag.name)} title="Delete Tag">
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </Modal>
     </TooltipProvider>
   );
 }
