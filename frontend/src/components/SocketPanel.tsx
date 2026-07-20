@@ -7,13 +7,14 @@ import { useTheme } from "./ThemeProvider";
 import type { SocketMessage } from "../hooks/useSocketIO";
 
 interface SocketPanelProps {
+  type?: 'socket.io' | 'websocket';
   messages: SocketMessage[];
   isConnected: boolean;
   onEmit: (eventName: string, payload: any) => void;
   onClear: () => void;
 }
 
-export function SocketPanel({ messages, isConnected, onEmit, onClear }: SocketPanelProps) {
+export function SocketPanel({ type = 'socket.io', messages, isConnected, onEmit, onClear }: SocketPanelProps) {
   const { theme } = useTheme();
   const [eventName, setEventName] = useState("");
   const [payloadText, setPayloadText] = useState("");
@@ -25,7 +26,7 @@ export function SocketPanel({ messages, isConnected, onEmit, onClear }: SocketPa
   }, [messages]);
 
   const handleEmit = () => {
-    if (!eventName.trim()) return;
+    if (type === 'socket.io' && !eventName.trim()) return;
     
     let parsedPayload = payloadText;
     try {
@@ -73,7 +74,12 @@ export function SocketPanel({ messages, isConnected, onEmit, onClear }: SocketPa
                 <div style={{ flex: 1, minWidth: 0, overflowWrap: 'anywhere' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
                     <span style={{ fontWeight: 600, color: 'var(--foreground)' }}>
-                      {msg.type === 'system' ? 'System' : (msg.type === 'sent' ? `Emit: ${msg.eventName}` : `Receive: ${msg.eventName}`)}
+                      {msg.type === 'system' 
+                        ? 'System' 
+                        : (msg.type === 'sent' 
+                            ? (type === 'socket.io' ? `Emit: ${msg.eventName}` : 'Sent')
+                            : (type === 'socket.io' ? `Receive: ${msg.eventName}` : 'Received')
+                          )}
                     </span>
                     <span style={{ fontSize: '11px', color: 'var(--muted-foreground)' }}>
                       {msg.timestamp.toLocaleTimeString()}
@@ -92,21 +98,23 @@ export function SocketPanel({ messages, isConnected, onEmit, onClear }: SocketPa
 
       <div className="panel" style={{ height: '200px', display: 'flex', flexDirection: 'column', padding: '10px' }}>
         <div style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
-          <input
-            className="input small"
-            style={{ width: '200px', flexShrink: 0 }}
-            placeholder="Event name (e.g. 'message')"
-            value={eventName}
-            onChange={e => setEventName(e.target.value)}
-            disabled={!isConnected}
-          />
+          {type === 'socket.io' && (
+            <input
+              className="input small"
+              style={{ width: '200px', flexShrink: 0 }}
+              placeholder="Event name (e.g. 'message')"
+              value={eventName}
+              onChange={e => setEventName(e.target.value)}
+              disabled={!isConnected}
+            />
+          )}
           <button 
             className="button primary small" 
             onClick={handleEmit}
-            disabled={!isConnected || !eventName.trim()}
+            disabled={!isConnected || (type === 'socket.io' && !eventName.trim())}
           >
             <Send size={14} />
-            Emit
+            {type === 'socket.io' ? 'Emit' : 'Send'}
           </button>
         </div>
         <div style={{ flex: 1, border: '1px solid var(--border)', borderRadius: 'var(--radius)', overflow: 'hidden' }}>

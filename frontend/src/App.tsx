@@ -45,6 +45,7 @@ import { oneDark } from '@codemirror/theme-one-dark';
 import { Modal } from "./components/Modal";
 import { SocketPanel } from "./components/SocketPanel";
 import { useSocketIO } from "./hooks/useSocketIO";
+import { useWebSocket } from "./hooks/useWebSocket";
 
 const PAGE_SIZE = 50;
 const MAX_URL_TOOLTIP_LENGTH = 500;
@@ -152,6 +153,7 @@ export default function App() {
   const requestWasCancelledRef = useRef(false);
 
   const socketIO = useSocketIO();
+  const webSocket = useWebSocket();
 
   const [history, setHistory] = useState<RequestHistoryItem[]>([]);
   const [historyPage, setHistoryPage] = useState(1);
@@ -431,6 +433,14 @@ export default function App() {
     setUrl(qs ? `${baseUrl}?${qs}` : baseUrl);
   };
 
+  const handleMethodChange = (event: React.ChangeEvent<HTMLSelectElement>) => {
+    const newMethod = event.target.value;
+    if (newMethod === "WEBSOCKET" && reqTab === "headers") {
+      setReqTab("params");
+    }
+    setMethod(newMethod);
+  };
+
   const handleSend = async () => {
     if (isLoading) return;
     if (!url.trim()) {
@@ -477,6 +487,24 @@ export default function App() {
       } catch(e) {
         // execute request will fail because the Go backend won't know how to handle SOCKET.IO method,
         // but it will save the history before executing!
+      }
+      reloadHistory();
+      void loadTags();
+      return;
+    } else if (method === "WEBSOCKET") {
+      webSocket.connect(url.trim(), body);
+      setIsLoading(false);
+      // Save configuration to history
+      try {
+        await ExecuteRequest(new engine.HTTPRequest({
+          url: url.trim(),
+          method: "WEBSOCKET",
+          headers: filteredHeaders,
+          body_type: "none",
+          body: "",
+          form_data: [],
+        }), parsedTags, requestID);
+      } catch(e) {
       }
       reloadHistory();
       void loadTags();
@@ -710,7 +738,7 @@ export default function App() {
     return COMMON_HEADER_VALUES[key.trim().toLowerCase()] || [];
   };
 
-  const canShowBody = ["POST", "PUT", "PATCH", "DELETE", "SOCKET.IO"].includes(method);
+  const canShowBody = ["POST", "PUT", "PATCH", "DELETE", "SOCKET.IO", "WEBSOCKET"].includes(method);
 
   return (
     <TooltipProvider delayDuration={300}>
@@ -873,7 +901,7 @@ export default function App() {
                   </div>
                   <div className="history-meta">
                     <div className="history-meta-left">
-                      {item.method !== "SOCKET.IO" && (
+                      {item.method !== "SOCKET.IO" && item.method !== "WEBSOCKET" && (
                         <>
                           <span className={statusClass(item.response_status)}>{item.response_status}</span>
                           <span>{item.duration_ms} ms</span>
@@ -947,8 +975,8 @@ export default function App() {
         <section className="request-bar panel">
           <div className="request-line">
             <div className="select-wrap">
-              <select className="select" value={method} onChange={(event) => setMethod(event.target.value)}>
-                {["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS", "SOCKET.IO"].map((item) => (
+              <select className="select" value={method} onChange={handleMethodChange}>
+                {["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS", "SOCKET.IO", "WEBSOCKET"].map((item) => (
                   <option key={item} value={item}>
                     {item}
                   </option>
@@ -963,13 +991,21 @@ export default function App() {
               onChange={(event) => setUrl(event.target.value)}
               onKeyDown={(event) => event.key === "Enter" && handleSend()}
             />
-            {method === "SOCKET.IO" ? (
+            {method === "SOCKET.IO" || method === "WEBSOCKET" ? (
               <button
-                className={`button ${socketIO.isConnected ? "outline" : "primary"} send-button`}
-                onClick={socketIO.isConnected ? socketIO.disconnect : handleSend}
+                className={`button ${
+                  method === "SOCKET.IO" 
+                    ? (socketIO.isConnected ? "outline" : "primary") 
+                    : (webSocket.isConnected ? "outline" : "primary")
+                } send-button`}
+                onClick={
+                  method === "SOCKET.IO"
+                    ? (socketIO.isConnected ? socketIO.disconnect : handleSend)
+                    : (webSocket.isConnected ? webSocket.disconnect : handleSend)
+                }
               >
-                {socketIO.isConnected ? <X size={16} style={{ flexShrink: 0 }} /> : <Plug size={16} style={{ flexShrink: 0 }} />}
-                {socketIO.isConnected ? "Disconnect" : "Connect"}
+                {(method === "SOCKET.IO" ? socketIO.isConnected : webSocket.isConnected) ? <X size={16} style={{ flexShrink: 0 }} /> : <Plug size={16} style={{ flexShrink: 0 }} />}
+                {(method === "SOCKET.IO" ? socketIO.isConnected : webSocket.isConnected) ? "Disconnect" : "Connect"}
               </button>
             ) : (
               <button
@@ -1055,12 +1091,14 @@ export default function App() {
         <section ref={reqConfigRef} className="panel request-config">
           <div className="request-config-head">
             <div className="tabs">
-              <button className={reqTab === "headers" ? "active" : ""} onClick={() => setReqTab("headers")}>
-                Headers ({enabledHeaderCount})
-              </button>
+              {method !== "WEBSOCKET" && (
+                <button className={reqTab === "headers" ? "active" : ""} onClick={() => setReqTab("headers")}>
+                  Headers ({enabledHeaderCount})
+                </button>
+              )}
               {canShowBody && (
                 <button className={reqTab === "body" ? "active" : ""} onClick={() => setReqTab("body")}>
-                  {method === "SOCKET.IO" ? "Options (JSON)" : "Body"}
+                  {method === "SOCKET.IO" ? "Options (JSON)" : method === "WEBSOCKET" ? "Protocols (JSON Array)" : "Body"}
                 </button>
               )}
               <button className={reqTab === "params" ? "active" : ""} onClick={() => setReqTab("params")}>
@@ -1074,7 +1112,7 @@ export default function App() {
                   Add param
                 </button>
               )}
-              {reqTab === "headers" && (
+              {reqTab === "headers" && method !== "WEBSOCKET" && (
                 <button className="button outline small" onClick={addHeader}>
                   <Plus size={14} />
                   Add header
@@ -1095,13 +1133,16 @@ export default function App() {
               </thead>
               <tbody>
                 {params.map((row, index) => (
-                  <tr key={index}>
+                  <tr className={row.enabled ? "header-row" : "header-row disabled"} key={index}>
                     <td style={{ textAlign: "center" }}>
-                      <input
-                        type="checkbox"
-                        checked={row.enabled}
-                        onChange={(event) => handleParamChange(index, "enabled", event.target.checked)}
-                      />
+                      <label className="checkbox" style={{ display: 'flex', justifyContent: 'center' }}>
+                        <input
+                          type="checkbox"
+                          checked={row.enabled}
+                          onChange={(event) => handleParamChange(index, "enabled", event.target.checked)}
+                        />
+                        <span>{row.enabled && <Check size={13} />}</span>
+                      </label>
                     </td>
                     <td>
                       <input
@@ -1135,7 +1176,7 @@ export default function App() {
             </table>
           )}
 
-          {reqTab === "headers" && (
+          {reqTab === "headers" && method !== "WEBSOCKET" && (
             <>
               <datalist id="common-header-names">
                 {COMMON_HEADER_NAMES.map((name) => (
@@ -1213,14 +1254,14 @@ export default function App() {
 
           {reqTab === "body" && (
             <div className="request-body-wrapper" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              {method !== "SOCKET.IO" && (
+              {method !== "SOCKET.IO" && method !== "WEBSOCKET" && (
                 <div className="tabs small" style={{ alignSelf: "flex-start" }}>
                   <button className={bodyType === "raw" ? "active" : ""} onClick={() => setBodyType("raw")}>Raw</button>
                   <button className={bodyType === "form-data" ? "active" : ""} onClick={() => setBodyType("form-data")}>Form-Data</button>
                 </div>
               )}
 
-              {bodyType === "raw" || method === "SOCKET.IO" ? (
+              {bodyType === "raw" || method === "SOCKET.IO" || method === "WEBSOCKET" ? (
                 <div style={{ position: 'relative' }}>
                   <button className="button ghost small" style={{ position: 'absolute', top: '8px', right: '8px', zIndex: 10 }} onClick={() => {
                     try {
@@ -1252,6 +1293,11 @@ export default function App() {
                   {method === "SOCKET.IO" && (
                     <div style={{ marginTop: '8px', fontSize: '12px', color: 'var(--muted-foreground)' }}>
                       JSON options will be merged into the Socket.IO <code>io(url, options)</code> initialization. Example: <code>{`{ "path": "/chat/socket.io", "auth": { "token": "..." } }`}</code>
+                    </div>
+                  )}
+                  {method === "WEBSOCKET" && (
+                    <div style={{ marginTop: '8px', fontSize: '12px', color: 'var(--muted-foreground)' }}>
+                      JSON array of sub-protocols for standard WebSocket <code>new WebSocket(url, protocols)</code>. Example: <code>{`["graphql-ws"]`}</code>
                     </div>
                   )}
                 </div>
@@ -1311,13 +1357,27 @@ export default function App() {
           title="Drag to resize"
         />
 
-        {method === "SOCKET.IO" ? (
-          <SocketPanel
-            messages={socketIO.messages}
-            isConnected={socketIO.isConnected}
-            onEmit={socketIO.emit}
-            onClear={socketIO.clearMessages}
-          />
+        {method === "SOCKET.IO" || method === "WEBSOCKET" ? (
+          <>
+            {method === "SOCKET.IO" && (
+              <SocketPanel 
+                type="socket.io"
+                isConnected={socketIO.isConnected} 
+                messages={socketIO.messages} 
+                onEmit={(eventName, payload) => socketIO.emit(eventName, payload)}
+                onClear={socketIO.clearMessages}
+              />
+            )}
+            {method === "WEBSOCKET" && (
+              <SocketPanel 
+                type="websocket"
+                isConnected={webSocket.isConnected} 
+                messages={webSocket.messages} 
+                onEmit={(_eventName, payload) => webSocket.send(payload)}
+                onClear={webSocket.clearMessages}
+              />
+            )}
+          </>
         ) : (
           <section className="panel response-panel">
           <div className="response-head">
