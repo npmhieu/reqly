@@ -24,6 +24,7 @@ import "./App.css";
 import { useTheme } from "./components/ThemeProvider";
 import {
   ExecuteRequest,
+  CancelRequest,
   GetHistory,
   DeleteHistory,
   GetAllTags,
@@ -138,8 +139,11 @@ export default function App() {
   const [tags, setTags] = useState("");
 
   const [isLoading, setIsLoading] = useState(false);
+  const [isCancelling, setIsCancelling] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [response, setResponse] = useState<ResponseState | null>(null);
+  const activeRequestIdRef = useRef<string | null>(null);
+  const requestWasCancelledRef = useRef(false);
 
   const [history, setHistory] = useState<RequestHistoryItem[]>([]);
   const [historyPage, setHistoryPage] = useState(1);
@@ -364,12 +368,17 @@ export default function App() {
   const enabledHeaderCount = headers.filter((h) => h.enabled && h.key.trim()).length;
 
   const handleSend = async () => {
+    if (isLoading) return;
     if (!url.trim()) {
       setError("URL is required");
       return;
     }
 
+    const requestID = crypto.randomUUID();
+    activeRequestIdRef.current = requestID;
+    requestWasCancelledRef.current = false;
     setIsLoading(true);
+    setIsCancelling(false);
     setError(null);
     setResponse(null);
 
@@ -399,17 +408,32 @@ export default function App() {
         body: body,
         form_data: validFormData,
       });
-      const resp = await ExecuteRequest(reqPayload, parsedTags);
+      const resp = await ExecuteRequest(reqPayload, parsedTags, requestID);
 
       setResponse(resp as ResponseState);
       setRespTab("body");
       reloadHistory();
       void loadTags();
     } catch (err: any) {
-      setError(err?.toString() || "An unexpected error occurred");
+      if (!requestWasCancelledRef.current) {
+        setError(err?.toString() || "An unexpected error occurred");
+      }
     } finally {
-      setIsLoading(false);
+      if (activeRequestIdRef.current === requestID) {
+        activeRequestIdRef.current = null;
+        setIsLoading(false);
+        setIsCancelling(false);
+      }
     }
+  };
+
+  const handleCancelRequest = () => {
+    const requestID = activeRequestIdRef.current;
+    if (!requestID || isCancelling) return;
+
+    requestWasCancelledRef.current = true;
+    setIsCancelling(true);
+    void CancelRequest(requestID);
   };
 
   const handleHeaderChange = (index: number, field: keyof HeaderRow, value: string | boolean) => {
@@ -849,9 +873,13 @@ export default function App() {
               onChange={(event) => setUrl(event.target.value)}
               onKeyDown={(event) => event.key === "Enter" && handleSend()}
             />
-            <button className="button primary send-button" onClick={handleSend} disabled={isLoading}>
-              {isLoading ? <Loader2 size={16} className="spin" /> : <Send size={16} />}
-              Send
+            <button
+              className={`button ${isLoading ? "outline" : "primary"} send-button`}
+              onClick={isLoading ? handleCancelRequest : handleSend}
+              disabled={isCancelling}
+            >
+              {isLoading ? (isCancelling ? <Loader2 size={16} className="spin" /> : <X size={16} />) : <Send size={16} />}
+              {isLoading ? (isCancelling ? "Cancelling" : "Cancel") : "Send"}
             </button>
           </div>
 

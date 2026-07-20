@@ -4,22 +4,29 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"reqly/internal/db"
 	"reqly/internal/engine"
-	"log"
+	"sync"
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
 // App struct
 type App struct {
-	ctx context.Context
-	db  *db.DBManager
+	ctx            context.Context
+	db             *db.DBManager
+	requestMu      sync.Mutex
+	activeRequests map[string]context.CancelFunc
+	cancelledIDs   map[string]struct{}
 }
 
 // NewApp creates a new App application struct
 func NewApp() *App {
-	return &App{}
+	return &App{
+		activeRequests: make(map[string]context.CancelFunc),
+		cancelledIDs:   make(map[string]struct{}),
+	}
 }
 
 // startup is called when the app starts. The context is saved
@@ -44,8 +51,29 @@ func (a *App) shutdown(ctx context.Context) {
 }
 
 // ExecuteRequest executes an HTTP request, saves it to history, and returns the response
-func (a *App) ExecuteRequest(req engine.HTTPRequest, tags []string) (*engine.HTTPResponse, error) {
-	resp, err := engine.ExecuteRequest(&req)
+func (a *App) ExecuteRequest(req engine.HTTPRequest, tags []string, requestID string) (*engine.HTTPResponse, error) {
+	requestCtx, cancel := context.WithCancel(context.Background())
+	if requestID != "" {
+		a.requestMu.Lock()
+		_, wasCancelled := a.cancelledIDs[requestID]
+		delete(a.cancelledIDs, requestID)
+		if !wasCancelled {
+			a.activeRequests[requestID] = cancel
+		}
+		a.requestMu.Unlock()
+		defer func() {
+			a.requestMu.Lock()
+			delete(a.activeRequests, requestID)
+			a.requestMu.Unlock()
+		}()
+		if wasCancelled {
+			cancel()
+			return nil, context.Canceled
+		}
+	}
+	defer cancel()
+
+	resp, err := engine.ExecuteRequest(requestCtx, &req)
 	if err != nil {
 		return nil, err
 	}
@@ -76,6 +104,19 @@ func (a *App) ExecuteRequest(req engine.HTTPRequest, tags []string) (*engine.HTT
 	}
 
 	return resp, nil
+}
+
+// CancelRequest stops a request that is currently being executed.
+func (a *App) CancelRequest(requestID string) {
+	a.requestMu.Lock()
+	cancel := a.activeRequests[requestID]
+	if cancel == nil {
+		a.cancelledIDs[requestID] = struct{}{}
+	}
+	a.requestMu.Unlock()
+	if cancel != nil {
+		cancel()
+	}
 }
 
 // GetHistory retrieves paginated request history, optionally filtered by a tag.

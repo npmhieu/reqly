@@ -3,11 +3,13 @@
 import {engine} from '../models';
 import {db} from '../models';
 
+export function CancelRequest(arg1:string):Promise<void>;
+
 export function DeleteHistory(arg1:number):Promise<void>;
 
 export function DeleteTag(arg1:string):Promise<void>;
 
-export function ExecuteRequest(arg1:engine.HTTPRequest,arg2:Array<string>):Promise<engine.HTTPResponse>;
+export function ExecuteRequest(arg1:engine.HTTPRequest,arg2:Array<string>,arg3:string):Promise<engine.HTTPResponse>;
 
 export function GetAllTags():Promise<Array<string>>;
 
