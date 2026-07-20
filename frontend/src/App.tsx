@@ -19,6 +19,7 @@ import {
   Settings,
   MoreHorizontal,
   Pencil,
+  Plug,
 } from "lucide-react";
 import "./App.css";
 import { useTheme } from "./components/ThemeProvider";
@@ -131,6 +132,9 @@ export default function App() {
   const [method, setMethod] = useState("GET");
   const [headers, setHeaders] = useState<HeaderRow[]>([
     { enabled: true, key: "Accept", value: "application/json" },
+    { enabled: true, key: "", value: "" },
+  ]);
+  const [params, setParams] = useState<HeaderRow[]>([
     { enabled: true, key: "", value: "" },
   ]);
   const [bodyType, setBodyType] = useState<"raw" | "form-data">("raw");
@@ -278,7 +282,7 @@ export default function App() {
   const [importText, setImportText] = useState("");
   const [importError, setImportError] = useState<string | null>(null);
 
-  const [reqTab, setReqTab] = useState<"headers" | "body">("headers");
+  const [reqTab, setReqTab] = useState<"params" | "headers" | "body">("params");
   const [respTab, setRespTab] = useState<"body" | "headers">("body");
   const [editingHistoryId, setEditingHistoryId] = useState<number | null>(null);
   const [editingTagsText, setEditingTagsText] = useState("");
@@ -370,6 +374,62 @@ export default function App() {
   }, [history, searchQuery]);
 
   const enabledHeaderCount = headers.filter((h) => h.enabled && h.key.trim()).length;
+  const enabledParamCount = params.filter((p) => p.enabled && p.key.trim()).length;
+
+  useEffect(() => {
+    const idx = url.indexOf('?');
+    const qs = idx === -1 ? "" : url.substring(idx + 1);
+    const searchParams = new URLSearchParams(qs);
+    const newParams: HeaderRow[] = [];
+    searchParams.forEach((value, key) => {
+      newParams.push({ enabled: true, key, value });
+    });
+    newParams.push({ enabled: true, key: "", value: "" });
+
+    // Deep equal check to prevent loop
+    const isSame = newParams.length === params.length && newParams.every((p, i) => p.key === params[i].key && p.value === params[i].value && p.enabled === params[i].enabled);
+    if (!isSame) {
+      setParams(newParams);
+    }
+  }, [url]);
+
+  const handleParamChange = (index: number, field: keyof HeaderRow, value: string | boolean) => {
+    const updated = [...params];
+    updated[index] = { ...updated[index], [field]: value };
+    setParams(updated);
+
+    const idx = url.indexOf('?');
+    const baseUrl = idx === -1 ? url : url.substring(0, idx);
+    const searchParams = new URLSearchParams();
+    updated.forEach(p => {
+      if (p.enabled && p.key.trim()) {
+        searchParams.append(p.key.trim(), p.value);
+      }
+    });
+    const qs = searchParams.toString();
+    setUrl(qs ? `${baseUrl}?${qs}` : baseUrl);
+  };
+
+  const addParam = () => setParams((current) => [...current, { enabled: true, key: "", value: "" }]);
+  
+  const removeParam = (index: number) => {
+    const updated = params.filter((_, i) => i !== index);
+    if (updated.length === 0) {
+      updated.push({ enabled: true, key: "", value: "" });
+    }
+    setParams(updated);
+
+    const idx = url.indexOf('?');
+    const baseUrl = idx === -1 ? url : url.substring(0, idx);
+    const searchParams = new URLSearchParams();
+    updated.forEach(p => {
+      if (p.enabled && p.key.trim()) {
+        searchParams.append(p.key.trim(), p.value);
+      }
+    });
+    const qs = searchParams.toString();
+    setUrl(qs ? `${baseUrl}?${qs}` : baseUrl);
+  };
 
   const handleSend = async () => {
     if (isLoading) return;
@@ -402,7 +462,7 @@ export default function App() {
       .filter(Boolean);
 
     if (method === "SOCKET.IO") {
-      socketIO.connect(url.trim(), headers);
+      socketIO.connect(url.trim(), headers, body);
       setIsLoading(false);
       // Save configuration to history
       try {
@@ -650,7 +710,7 @@ export default function App() {
     return COMMON_HEADER_VALUES[key.trim().toLowerCase()] || [];
   };
 
-  const canShowBody = ["POST", "PUT", "PATCH", "DELETE"].includes(method);
+  const canShowBody = ["POST", "PUT", "PATCH", "DELETE", "SOCKET.IO"].includes(method);
 
   return (
     <TooltipProvider delayDuration={300}>
@@ -908,7 +968,7 @@ export default function App() {
                 className={`button ${socketIO.isConnected ? "outline" : "primary"} send-button`}
                 onClick={socketIO.isConnected ? socketIO.disconnect : handleSend}
               >
-                {socketIO.isConnected ? <X size={16} /> : <Send size={16} />}
+                {socketIO.isConnected ? <X size={16} style={{ flexShrink: 0 }} /> : <Plug size={16} style={{ flexShrink: 0 }} />}
                 {socketIO.isConnected ? "Disconnect" : "Connect"}
               </button>
             ) : (
@@ -917,7 +977,7 @@ export default function App() {
                 onClick={isLoading ? handleCancelRequest : handleSend}
                 disabled={isCancelling}
               >
-                {isLoading ? (isCancelling ? <Loader2 size={16} className="spin" /> : <X size={16} />) : <Send size={16} />}
+                {isLoading ? (isCancelling ? <Loader2 size={16} className="spin" style={{ flexShrink: 0 }} /> : <X size={16} style={{ flexShrink: 0 }} />) : <Send size={16} style={{ flexShrink: 0 }} />}
                 {isLoading ? (isCancelling ? "Cancelling" : "Cancel") : "Send"}
               </button>
             )}
@@ -992,16 +1052,7 @@ export default function App() {
           </form>
         </section>
 
-        {method === "SOCKET.IO" ? (
-          <SocketPanel
-            messages={socketIO.messages}
-            isConnected={socketIO.isConnected}
-            onEmit={socketIO.emit}
-            onClear={socketIO.clearMessages}
-          />
-        ) : (
-          <>
-            <section ref={reqConfigRef} className="panel request-config">
+        <section ref={reqConfigRef} className="panel request-config">
           <div className="request-config-head">
             <div className="tabs">
               <button className={reqTab === "headers" ? "active" : ""} onClick={() => setReqTab("headers")}>
@@ -1009,11 +1060,20 @@ export default function App() {
               </button>
               {canShowBody && (
                 <button className={reqTab === "body" ? "active" : ""} onClick={() => setReqTab("body")}>
-                  Body
+                  {method === "SOCKET.IO" ? "Options (JSON)" : "Body"}
                 </button>
               )}
+              <button className={reqTab === "params" ? "active" : ""} onClick={() => setReqTab("params")}>
+                Params ({enabledParamCount})
+              </button>
             </div>
             <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+              {reqTab === "params" && (
+                <button className="button outline small" onClick={addParam}>
+                  <Plus size={14} />
+                  Add param
+                </button>
+              )}
               {reqTab === "headers" && (
                 <button className="button outline small" onClick={addHeader}>
                   <Plus size={14} />
@@ -1022,6 +1082,58 @@ export default function App() {
               )}
             </div>
           </div>
+
+          {reqTab === "params" && (
+            <table className="headers-table">
+              <thead>
+                <tr>
+                  <th style={{ width: '36px', textAlign: "center" }}>On</th>
+                  <th style={{ width: '25%' }}>Key</th>
+                  <th>Value</th>
+                  <th style={{ width: '36px' }}></th>
+                </tr>
+              </thead>
+              <tbody>
+                {params.map((row, index) => (
+                  <tr key={index}>
+                    <td style={{ textAlign: "center" }}>
+                      <input
+                        type="checkbox"
+                        checked={row.enabled}
+                        onChange={(event) => handleParamChange(index, "enabled", event.target.checked)}
+                      />
+                    </td>
+                    <td>
+                      <input
+                        className="input small"
+                        placeholder="Key"
+                        value={row.key}
+                        onChange={(event) => handleParamChange(index, "key", event.target.value)}
+                      />
+                    </td>
+                    <td>
+                      <input
+                        className="input small"
+                        placeholder="Value"
+                        value={row.value}
+                        onChange={(event) => handleParamChange(index, "value", event.target.value)}
+                        onKeyDown={(event) => {
+                          if (event.key === 'Tab' && index === params.length - 1 && (row.key || row.value)) {
+                            addParam();
+                          }
+                        }}
+                      />
+                    </td>
+                    <td style={{ textAlign: "center" }}>
+                      <button className="icon-button" onClick={() => removeParam(index)}>
+                        <X size={15} />
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
 
           {reqTab === "headers" && (
             <>
@@ -1101,12 +1213,14 @@ export default function App() {
 
           {reqTab === "body" && (
             <div className="request-body-wrapper" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              <div className="tabs small" style={{ alignSelf: "flex-start" }}>
-                <button className={bodyType === "raw" ? "active" : ""} onClick={() => setBodyType("raw")}>Raw</button>
-                <button className={bodyType === "form-data" ? "active" : ""} onClick={() => setBodyType("form-data")}>Form-Data</button>
-              </div>
+              {method !== "SOCKET.IO" && (
+                <div className="tabs small" style={{ alignSelf: "flex-start" }}>
+                  <button className={bodyType === "raw" ? "active" : ""} onClick={() => setBodyType("raw")}>Raw</button>
+                  <button className={bodyType === "form-data" ? "active" : ""} onClick={() => setBodyType("form-data")}>Form-Data</button>
+                </div>
+              )}
 
-              {bodyType === "raw" ? (
+              {bodyType === "raw" || method === "SOCKET.IO" ? (
                 <div style={{ position: 'relative' }}>
                   <button className="button ghost small" style={{ position: 'absolute', top: '8px', right: '8px', zIndex: 10 }} onClick={() => {
                     try {
@@ -1135,6 +1249,11 @@ export default function App() {
                       }}
                     />
                   </div>
+                  {method === "SOCKET.IO" && (
+                    <div style={{ marginTop: '8px', fontSize: '12px', color: 'var(--muted-foreground)' }}>
+                      JSON options will be merged into the Socket.IO <code>io(url, options)</code> initialization. Example: <code>{`{ "path": "/chat/socket.io", "auth": { "token": "..." } }`}</code>
+                    </div>
+                  )}
                 </div>
               ) : (
                 <div style={{ display: "grid", gridTemplateColumns: "minmax(120px, 1fr) 80px minmax(180px, 2fr) 30px", columnGap: "8px", rowGap: "6px", alignItems: "center", maxHeight: "230px", overflowY: "auto" }}>
@@ -1192,7 +1311,15 @@ export default function App() {
           title="Drag to resize"
         />
 
-        <section className="panel response-panel">
+        {method === "SOCKET.IO" ? (
+          <SocketPanel
+            messages={socketIO.messages}
+            isConnected={socketIO.isConnected}
+            onEmit={socketIO.emit}
+            onClear={socketIO.clearMessages}
+          />
+        ) : (
+          <section className="panel response-panel">
           <div className="response-head">
             <h2>Response</h2>
             {response && (
@@ -1286,7 +1413,6 @@ export default function App() {
             )}
           </div>
         </section>
-          </>
         )}
       </main>
 

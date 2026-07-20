@@ -23,7 +23,7 @@ export function useSocketIO() {
     }]);
   }, []);
 
-  const connect = useCallback((url: string, headers: Array<{key: string, value: string, enabled: boolean}>) => {
+  const connect = useCallback((url: string, headers: Array<{key: string, value: string, enabled: boolean}>, optionsJson?: string) => {
     if (socketRef.current) {
       socketRef.current.disconnect();
     }
@@ -35,10 +35,23 @@ export function useSocketIO() {
       }
     });
 
+    let parsedOptions: any = {};
+    if (optionsJson && optionsJson.trim()) {
+      try {
+        parsedOptions = JSON.parse(optionsJson);
+      } catch (e) {
+        addMessage({
+          type: 'system',
+          payload: 'Error parsing Socket.IO options (Body). Using defaults.',
+        });
+      }
+    }
+
     try {
       const newSocket = io(url, {
         extraHeaders,
-        transports: ['websocket', 'polling']
+        transports: ['websocket', 'polling'],
+        ...parsedOptions,
       });
 
       newSocket.on('connect', () => {
