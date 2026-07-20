@@ -534,6 +534,15 @@ pre {
   color: var(--purple);
 }
 
+.method-badge.socket\.io {
+  background: #fdf5ff;
+  color: #c90fe3;
+}
+.dark .method-badge.socket\.io {
+  background: #2e1036;
+  color: #f17eff;
+}
+
 .latency {
   background: var(--secondary);
   color: var(--secondary-foreground);

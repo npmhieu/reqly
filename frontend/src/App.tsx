@@ -42,6 +42,8 @@ import CodeMirror from '@uiw/react-codemirror';
 import { json } from '@codemirror/lang-json';
 import { oneDark } from '@codemirror/theme-one-dark';
 import { Modal } from "./components/Modal";
+import { SocketPanel } from "./components/SocketPanel";
+import { useSocketIO } from "./hooks/useSocketIO";
 
 const PAGE_SIZE = 50;
 const MAX_URL_TOOLTIP_LENGTH = 500;
@@ -144,6 +146,8 @@ export default function App() {
   const [response, setResponse] = useState<ResponseState | null>(null);
   const activeRequestIdRef = useRef<string | null>(null);
   const requestWasCancelledRef = useRef(false);
+
+  const socketIO = useSocketIO();
 
   const [history, setHistory] = useState<RequestHistoryItem[]>([]);
   const [historyPage, setHistoryPage] = useState(1);
@@ -396,6 +400,28 @@ export default function App() {
       .split(",")
       .map((t) => t.trim())
       .filter(Boolean);
+
+    if (method === "SOCKET.IO") {
+      socketIO.connect(url.trim(), headers);
+      setIsLoading(false);
+      // Save configuration to history
+      try {
+        await ExecuteRequest(new engine.HTTPRequest({
+          url: url.trim(),
+          method: "SOCKET.IO",
+          headers: filteredHeaders,
+          body_type: "none",
+          body: "",
+          form_data: [],
+        }), parsedTags, requestID);
+      } catch(e) {
+        // execute request will fail because the Go backend won't know how to handle SOCKET.IO method,
+        // but it will save the history before executing!
+      }
+      reloadHistory();
+      void loadTags();
+      return;
+    }
 
     const validFormData = formData.filter(f => f.key.trim());
 
@@ -787,8 +813,12 @@ export default function App() {
                   </div>
                   <div className="history-meta">
                     <div className="history-meta-left">
-                      <span className={statusClass(item.response_status)}>{item.response_status}</span>
-                      <span>{item.duration_ms} ms</span>
+                      {item.method !== "SOCKET.IO" && (
+                        <>
+                          <span className={statusClass(item.response_status)}>{item.response_status}</span>
+                          <span>{item.duration_ms} ms</span>
+                        </>
+                      )}
                       <Tooltip>
                         <TooltipTrigger asChild>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '4px', minWidth: 0 }}>
@@ -858,7 +888,7 @@ export default function App() {
           <div className="request-line">
             <div className="select-wrap">
               <select className="select" value={method} onChange={(event) => setMethod(event.target.value)}>
-                {["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"].map((item) => (
+                {["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS", "SOCKET.IO"].map((item) => (
                   <option key={item} value={item}>
                     {item}
                   </option>
@@ -873,14 +903,24 @@ export default function App() {
               onChange={(event) => setUrl(event.target.value)}
               onKeyDown={(event) => event.key === "Enter" && handleSend()}
             />
-            <button
-              className={`button ${isLoading ? "outline" : "primary"} send-button`}
-              onClick={isLoading ? handleCancelRequest : handleSend}
-              disabled={isCancelling}
-            >
-              {isLoading ? (isCancelling ? <Loader2 size={16} className="spin" /> : <X size={16} />) : <Send size={16} />}
-              {isLoading ? (isCancelling ? "Cancelling" : "Cancel") : "Send"}
-            </button>
+            {method === "SOCKET.IO" ? (
+              <button
+                className={`button ${socketIO.isConnected ? "outline" : "primary"} send-button`}
+                onClick={socketIO.isConnected ? socketIO.disconnect : handleSend}
+              >
+                {socketIO.isConnected ? <X size={16} /> : <Send size={16} />}
+                {socketIO.isConnected ? "Disconnect" : "Connect"}
+              </button>
+            ) : (
+              <button
+                className={`button ${isLoading ? "outline" : "primary"} send-button`}
+                onClick={isLoading ? handleCancelRequest : handleSend}
+                disabled={isCancelling}
+              >
+                {isLoading ? (isCancelling ? <Loader2 size={16} className="spin" /> : <X size={16} />) : <Send size={16} />}
+                {isLoading ? (isCancelling ? "Cancelling" : "Cancel") : "Send"}
+              </button>
+            )}
           </div>
 
           <form 
@@ -952,7 +992,16 @@ export default function App() {
           </form>
         </section>
 
-        <section ref={reqConfigRef} className="panel request-config">
+        {method === "SOCKET.IO" ? (
+          <SocketPanel
+            messages={socketIO.messages}
+            isConnected={socketIO.isConnected}
+            onEmit={socketIO.emit}
+            onClear={socketIO.clearMessages}
+          />
+        ) : (
+          <>
+            <section ref={reqConfigRef} className="panel request-config">
           <div className="request-config-head">
             <div className="tabs">
               <button className={reqTab === "headers" ? "active" : ""} onClick={() => setReqTab("headers")}>
@@ -1237,6 +1286,8 @@ export default function App() {
             )}
           </div>
         </section>
+          </>
+        )}
       </main>
 
       <div className={`curl-overlay ${showCurl ? 'show' : ''}`} onClick={() => setShowCurl(false)} />
