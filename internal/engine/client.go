@@ -35,7 +35,7 @@ type HTTPResponse struct {
 	DurationMS int64             `json:"duration_ms"`
 }
 
-func ExecuteRequest(req *HTTPRequest) (*HTTPResponse, error) {
+func ExecuteRequest(ctx context.Context, req *HTTPRequest) (*HTTPResponse, error) {
 	method := strings.ToUpper(req.Method)
 	if method == "" {
 		method = "GET"
@@ -74,7 +74,7 @@ func ExecuteRequest(req *HTTPRequest) (*HTTPResponse, error) {
 		}
 	}
 
-	httpReq, err := http.NewRequestWithContext(context.Background(), method, req.URL, bodyReader)
+	httpReq, err := http.NewRequestWithContext(ctx, method, req.URL, bodyReader)
 	if err != nil {
 		return nil, err
 	}
