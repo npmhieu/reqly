@@ -56,7 +56,7 @@
   flex-direction: column;
   min-width: 0;
   gap: 8px;
-  padding: 8px;
+  padding: 0 8px 8px;
   overflow: hidden;
   background: var(--workspace);
 }
@@ -87,7 +87,7 @@
 
 .request-line {
   display: grid;
-  grid-template-columns: 100px minmax(0, 1fr) auto;
+  grid-template-columns: 136px minmax(0, 1fr) auto;
   gap: 8px;
   align-items: center;
 }
@@ -815,7 +815,7 @@ pre {
   }
 
   .request-line {
-    grid-template-columns: 108px minmax(0, 1fr);
+    grid-template-columns: 125px minmax(0, 1fr);
   }
 
   .send-button {

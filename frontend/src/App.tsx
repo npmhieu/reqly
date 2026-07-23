@@ -419,17 +419,21 @@ export default function App() {
 
       if (!parsed) return;
 
-      setUrl(parsed.url || "");
-      setMethod(parsed.method || "GET");
-      setBody(parsed.body || "");
-
-      const rows: HeaderRow[] = Object.entries(parsed.headers || {}).map(([key, value]) => ({
-        enabled: true,
-        key,
-        value: value as string,
-      }));
-      rows.push({ enabled: true, key: "", value: "" });
-      setHeaders(rows);
+      handleRerun({
+        id: Date.now(),
+        url: parsed.url || "",
+        method: parsed.method || "GET",
+        headers: JSON.stringify(parsed.headers || {}),
+        body: parsed.body || "",
+        body_type: parsed.body_type || "raw",
+        form_data: parsed.form_data ? JSON.stringify(parsed.form_data) : "",
+        created_at: new Date().toISOString(),
+        response_status: 0,
+        response_body: "",
+        response_headers: "",
+        duration_ms: 0,
+        tags: []
+      });
 
       setShowImport(false);
       setImportText("");
@@ -715,7 +719,7 @@ export default function App() {
 
 
       <main className="workspace" style={{ display: 'flex', flex: 1, flexDirection: 'column', height: '100vh', overflow: 'hidden', padding: 0 }}>
-        <div className="tab-bar" style={{ display: 'flex', background: 'var(--background-alt)', borderBottom: '1px solid var(--border)', padding: '0 8px', overflowX: 'auto', flexShrink: 0, height: '40px' }}>
+        <div className="tab-bar" style={{ display: 'flex', background: 'var(--background-alt)', borderBottom: '1px solid var(--border)', padding: '0 8px', overflowX: 'auto', flexShrink: 0, height: '36px' }}>
           {tabs.map((tab, idx) => (
             <div 
               key={tab.id} 
