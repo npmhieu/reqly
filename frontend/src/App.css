@@ -213,7 +213,7 @@ option {
   width: 100%;
   border: 1px solid var(--input);
   border-radius: calc(var(--radius) - 2px);
-  background: var(--background);
+  background: var(--input-bg, var(--background));
   color: var(--foreground);
   outline: none;
   font-family: system-ui, "Helvetica Neue", Helvetica, Arial, sans-serif;
@@ -250,7 +250,7 @@ option {
   width: 100%;
   border: 1px solid var(--input);
   border-radius: calc(var(--radius) - 2px);
-  background: var(--background);
+  background: var(--input-bg, var(--background));
   color: var(--foreground);
   outline: none;
   font-family: inherit;

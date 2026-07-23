@@ -27,6 +27,7 @@
 
   --border: #e4e4e7;
   --input: #e4e4e7;
+  --input-bg: #ffffff;
   --ring: #18181b;
   --ring-soft: rgba(24, 24, 27, 0.12);
 
@@ -59,13 +60,13 @@
 .dark {
   --background: #09090b;
   --foreground: #e4e4e7;
-  --workspace: #0c0c0f;
-  --sidebar: #111114;
+  --workspace: #09090b;
+  --sidebar: #18181b;
 
-  --card: #111114;
+  --card: #18181b;
   --card-foreground: #e4e4e7;
 
-  --popover: #09090b;
+  --popover: #18181b;
   --popover-foreground: #e4e4e7;
 
   --primary: #fafafa;
@@ -84,7 +85,8 @@
   --destructive-foreground: #e4e4e7;
 
   --border: #27272a;
-  --input: #27272a;
+  --input: rgba(255, 255, 255, 0.075);
+  --input-bg: rgba(255, 255, 255, 0.075);
   --ring: #d4d4d8;
   --ring-soft: rgba(212, 212, 216, 0.14);
 
