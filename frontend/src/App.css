@@ -87,7 +87,7 @@
 
 .request-line {
   display: grid;
-  grid-template-columns: 136px minmax(0, 1fr) auto;
+  grid-template-columns: 132px minmax(0, 1fr) auto;
   gap: 8px;
   align-items: center;
 }
