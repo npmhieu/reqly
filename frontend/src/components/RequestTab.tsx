@@ -349,34 +349,7 @@ export function RequestTab({ isActive, isDark, initialHistoryItem, onUpdateTitle
   const [editingTagsText, setEditingTagsText] = useState("");
 
 
-  const handleSaveTagEdit = async (oldName: string) => {
-    if (!editingTagDraft || editingTagDraft.trim() === "") {
-      setEditingTagName(null);
-      return;
-    }
-    const newName = editingTagDraft.trim();
-    if (newName !== oldName) {
-      try {
-        await RenameTag(oldName, newName);
-        void loadTags();
-        reloadHistory();
-      } catch (err) {
-        console.error("Failed to rename tag:", err);
-      }
-    }
-    setEditingTagName(null);
-  };
 
-  const handleDeleteTag = async (name: string) => {
-    try {
-      await DeleteTag(name);
-      setConfirmDeleteTagName(null);
-      void loadTags();
-      reloadHistory();
-    } catch (err) {
-      console.error("Failed to delete tag:", err);
-    }
-  };
 
   const loadHistoryPage = useCallback(
     async (page: number, replace = false) => {
@@ -631,67 +604,7 @@ export function RequestTab({ isActive, isDark, initialHistoryItem, onUpdateTitle
     }
   };
 
-  const handleDeleteHistory = async (id: number, event: React.MouseEvent) => {
-    event.stopPropagation();
-    try {
-      await DeleteHistory(id);
-      reloadHistory();
-      void loadTags();
-    } catch (err) {
-      console.error("Failed to delete history:", err);
-    }
-  };
 
-  const handleRerun = (item: RequestHistoryItem) => {
-    setUrl(item.url);
-    setMethod(item.method);
-    setBody(item.body || "");
-
-    try {
-      const parsedHeaders = JSON.parse(item.headers || "{}");
-      const rows: HeaderRow[] = Object.entries(parsedHeaders).map(([key, value]) => ({
-        enabled: true,
-        key,
-        value: value as string,
-      }));
-      rows.push({ enabled: true, key: "", value: "" });
-      setHeaders(rows);
-    } catch {
-      setHeaders([{ enabled: true, key: "", value: "" }]);
-    }
-
-    setBodyType((item.body_type as "raw" | "form-data") || "raw");
-    try {
-      if (item.form_data) {
-        const parsedFormData = JSON.parse(item.form_data);
-        if (Array.isArray(parsedFormData) && parsedFormData.length > 0) {
-          setFormData(parsedFormData.map(f => new engine.FormDataItem(f)));
-        } else {
-          setFormData([new engine.FormDataItem({ key: "", value: "", type: "text" })]);
-        }
-      } else {
-        setFormData([new engine.FormDataItem({ key: "", value: "", type: "text" })]);
-      }
-    } catch {
-      setFormData([new engine.FormDataItem({ key: "", value: "", type: "text" })]);
-    }
-
-    setTags(item.tags?.join(", ") || "");
-
-    let parsedRespHeaders: Record<string, string> = {};
-    try {
-      parsedRespHeaders = JSON.parse(item.response_headers || "{}");
-    } catch {}
-
-    setResponse({
-      status: item.response_status,
-      status_text: `${item.response_status}`,
-      headers: parsedRespHeaders,
-      body: item.response_body,
-      duration_ms: item.duration_ms,
-    });
-    setError(null);
-  };
 
   const handleImport = async () => {
     setImportError(null);
@@ -726,36 +639,8 @@ export function RequestTab({ isActive, isDark, initialHistoryItem, onUpdateTitle
     }
   };
 
-  const startEditingTags = (item: RequestHistoryItem, event: React.MouseEvent) => {
-    event.stopPropagation();
-    setEditingHistoryId(item.id);
-    setEditingTagsText(item.tags?.join(", ") || "");
-  };
 
-  const saveEditedTags = async (id: number, event: React.FormEvent) => {
-    event.preventDefault();
-    const updatedTags = editingTagsText
-      .split(",")
-      .map((t) => t.trim())
-      .filter(Boolean);
 
-    try {
-      await UpdateRequestTags(id, updatedTags);
-      setEditingHistoryId(null);
-      reloadHistory();
-      void loadTags();
-    } catch (err) {
-      console.error("Failed to update tags:", err);
-    }
-  };
-
-  const handleHistoryScroll = (event: UIEvent<HTMLDivElement>) => {
-    const target = event.currentTarget;
-    const nearBottom = target.scrollHeight - target.scrollTop - target.clientHeight < 96;
-    if (nearBottom && hasMoreHistory && !isHistoryLoading && !searchQuery.trim()) {
-      void loadHistoryPage(historyPage + 1);
-    }
-  };
 
   const getFormattedResponseBody = () => {
     if (!response?.body) return "";

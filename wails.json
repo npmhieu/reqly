@@ -12,8 +12,8 @@
   },
   "info": {
     "productName": "Reqly",
-    "productVersion": "v1.0.0-rc",
+    "productVersion": "v1.0.1-rc",
     "comments": "A lightning-fast, privacy-first desktop REST API client."
   },
-  "version": "v1.0.0-rc"
+  "version": "v1.0.1-rc"
 }

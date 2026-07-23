@@ -225,14 +225,6 @@ export default function App() {
     };
   }
 
-  const startResize = (e: React.MouseEvent) => {
-    e.preventDefault();
-    isDraggingRef.current = true;
-    setIsResizing(true);
-    document.body.style.cursor = 'ns-resize';
-    if (handleMouseMoveRef.current) document.addEventListener('mousemove', handleMouseMoveRef.current);
-    if (stopResizeRef.current) document.addEventListener('mouseup', stopResizeRef.current);
-  };
 
   useEffect(() => {
     const handleEsc = (e: KeyboardEvent) => {
@@ -260,33 +252,6 @@ export default function App() {
     }
   }, [theme]);
 
-  const generateCurl = useCallback(() => {
-    let curlStr = `curl -X ${method} '${url}'`;
-    
-    headers.forEach(h => {
-      if (h.enabled && h.key) {
-        curlStr += ` \\\n  -H '${h.key}: ${h.value.replace(/'/g, "'\\''")}'`;
-      }
-    });
-
-    if (method !== 'GET' && method !== 'HEAD') {
-      if (bodyType === 'raw' && body) {
-        curlStr += ` \\\n  -d '${body.replace(/'/g, "'\\''")}'`;
-      } else if (bodyType === 'form-data') {
-        formData.forEach(f => {
-          if (f.key) {
-            if (f.type === 'text') {
-              curlStr += ` \\\n  -F '${f.key}=${f.value.replace(/'/g, "'\\''")}'`;
-            } else {
-              curlStr += ` \\\n  -F '${f.key}=@${f.value.replace(/'/g, "'\\''")}'`;
-            }
-          }
-        });
-      }
-    }
-    
-    return curlStr;
-  }, [method, url, headers, bodyType, body, formData]);
 
   const [showImport, setShowImport] = useState(false);
   const [importText, setImportText] = useState("");
@@ -403,175 +368,13 @@ export default function App() {
     }
   }, [url]);
 
-  const handleParamChange = (index: number, field: keyof HeaderRow, value: string | boolean) => {
-    const updated = [...params];
-    updated[index] = { ...updated[index], [field]: value };
-    setParams(updated);
 
-    const idx = url.indexOf('?');
-    const baseUrl = idx === -1 ? url : url.substring(0, idx);
-    const searchParams = new URLSearchParams();
-    updated.forEach(p => {
-      if (p.enabled && p.key.trim()) {
-        searchParams.append(p.key.trim(), p.value);
-      }
-    });
-    const qs = searchParams.toString();
-    setUrl(qs ? `${baseUrl}?${qs}` : baseUrl);
-  };
 
-  const addParam = () => setParams((current) => [...current, { enabled: true, key: "", value: "" }]);
-  
-  const removeParam = (index: number) => {
-    const updated = params.filter((_, i) => i !== index);
-    if (updated.length === 0) {
-      updated.push({ enabled: true, key: "", value: "" });
-    }
-    setParams(updated);
 
-    const idx = url.indexOf('?');
-    const baseUrl = idx === -1 ? url : url.substring(0, idx);
-    const searchParams = new URLSearchParams();
-    updated.forEach(p => {
-      if (p.enabled && p.key.trim()) {
-        searchParams.append(p.key.trim(), p.value);
-      }
-    });
-    const qs = searchParams.toString();
-    setUrl(qs ? `${baseUrl}?${qs}` : baseUrl);
-  };
 
-  const handleMethodChange = (event: React.ChangeEvent<HTMLSelectElement>) => {
-    const newMethod = event.target.value;
-    if (newMethod === "WEBSOCKET" && reqTab === "headers") {
-      setReqTab("params");
-    }
-    setMethod(newMethod);
-  };
 
-  const handleSend = async () => {
-    if (isLoading) return;
-    if (!url.trim()) {
-      setError("URL is required");
-      return;
-    }
 
-    const requestID = crypto.randomUUID();
-    activeRequestIdRef.current = requestID;
-    requestWasCancelledRef.current = false;
-    setIsLoading(true);
-    setIsCancelling(false);
-    setError(null);
-    setResponse(null);
 
-    const filteredHeaders: Record<string, string> = {};
-    headers.forEach((h) => {
-      if (h.enabled && h.key.trim()) {
-        filteredHeaders[h.key.trim()] = h.value;
-      }
-    });
-
-    if (isEditingDraftTags) {
-      setIsEditingDraftTags(false);
-    }
-    const parsedTags = tags
-      .split(",")
-      .map((t) => t.trim())
-      .filter(Boolean);
-
-    const validFormData = formData.filter(f => f.key.trim());
-
-    if (method === "SOCKET.IO") {
-      socketIO.connect(url.trim(), headers, body);
-      setIsLoading(false);
-      // Save configuration to history
-      try {
-        await ExecuteRequest(new engine.HTTPRequest({
-          url: url.trim(),
-          method: "SOCKET.IO",
-          headers: filteredHeaders,
-          body_type: bodyType,
-          body: body,
-          form_data: validFormData,
-        }), parsedTags, requestID);
-      } catch(e) {
-        // execute request will fail because the Go backend won't know how to handle SOCKET.IO method,
-        // but it will save the history before executing!
-      }
-      reloadHistory();
-      void loadTags();
-      return;
-    } else if (method === "WEBSOCKET") {
-      webSocket.connect(url.trim(), body);
-      setIsLoading(false);
-      // Save configuration to history
-      try {
-        await ExecuteRequest(new engine.HTTPRequest({
-          url: url.trim(),
-          method: "WEBSOCKET",
-          headers: filteredHeaders,
-          body_type: bodyType,
-          body: body,
-          form_data: validFormData,
-        }), parsedTags, requestID);
-      } catch(e) {
-      }
-      reloadHistory();
-      void loadTags();
-      return;
-    }
-
-    try {
-      const reqPayload = new engine.HTTPRequest({
-        url: url.trim(),
-        method,
-        headers: filteredHeaders,
-        body_type: bodyType,
-        body: body,
-        form_data: validFormData,
-      });
-      const resp = await ExecuteRequest(reqPayload, parsedTags, requestID);
-
-      setResponse(resp as ResponseState);
-      setRespTab("body");
-      reloadHistory();
-      void loadTags();
-    } catch (err: any) {
-      if (!requestWasCancelledRef.current) {
-        setError(err?.toString() || "An unexpected error occurred");
-      }
-    } finally {
-      if (activeRequestIdRef.current === requestID) {
-        activeRequestIdRef.current = null;
-        setIsLoading(false);
-        setIsCancelling(false);
-      }
-    }
-  };
-
-  const handleCancelRequest = () => {
-    const requestID = activeRequestIdRef.current;
-    if (!requestID || isCancelling) return;
-
-    requestWasCancelledRef.current = true;
-    setIsCancelling(true);
-    void CancelRequest(requestID);
-  };
-
-  const handleHeaderChange = (index: number, field: keyof HeaderRow, value: string | boolean) => {
-    const updated = [...headers];
-    updated[index] = { ...updated[index], [field]: value };
-    setHeaders(updated);
-  };
-
-  const addHeader = () => {
-    setHeaders((current) => [...current, { enabled: true, key: "", value: "" }]);
-  };
-
-  const removeHeader = (index: number) => {
-    const updated = headers.filter((_, i) => i !== index);
-    setHeaders(updated.length ? updated : [{ enabled: true, key: "", value: "" }]);
-  };
 
   const handleFormDataChange = (index: number, field: keyof engine.FormDataItem, value: string) => {
     const updated = [...formData];
@@ -579,21 +382,7 @@ export default function App() {
     setFormData(updated);
   };
 
-  const removeFormData = (index: number) => {
-    const updated = formData.filter((_, i) => i !== index);
-    setFormData(updated.length ? updated : [new engine.FormDataItem({ key: "", value: "", type: "text" })]);
-  };
 
-  const handleSelectFile = async (index: number) => {
-    try {
-      const filePath = await SelectFile();
-      if (filePath) {
-        handleFormDataChange(index, "value", filePath);
-      }
-    } catch (err) {
-      console.error("SelectFile error", err);
-    }
-  };
 
   const handleDeleteHistory = async (id: number, event: React.MouseEvent) => {
     event.stopPropagation();
@@ -680,14 +469,6 @@ export default function App() {
     }
   };
 
-  const getFormattedResponseBody = () => {
-    if (!response?.body) return "";
-    try {
-      return JSON.stringify(JSON.parse(response.body), null, 2);
-    } catch {
-      return response.body;
-    }
-  };
 
   const methodClass = (value: string) => `method-badge ${value.toLowerCase()}`;
   const statusClass = (status: number) => {
@@ -697,13 +478,7 @@ export default function App() {
     return "status-badge danger";
   };
 
-  const getTooltipText = (value: string, maxLength = MAX_URL_TOOLTIP_LENGTH) => {
-    return value.length > maxLength ? `${value.slice(0, maxLength)}...` : value;
-  };
 
-  const getHeaderValueSuggestions = (key: string) => {
-    return COMMON_HEADER_VALUES[key.trim().toLowerCase()] || [];
-  };
 
   const canShowBody = ["POST", "PUT", "PATCH", "DELETE", "SOCKET.IO", "WEBSOCKET"].includes(method);
 
