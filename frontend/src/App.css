@@ -240,6 +240,12 @@ option {
   box-shadow: 0 0 0 3px var(--ring-soft);
 }
 
+.input::placeholder,
+.textarea::placeholder {
+  color: var(--muted-foreground);
+  opacity: 1;
+}
+
 .textarea {
   width: 100%;
   border: 1px solid var(--input);
