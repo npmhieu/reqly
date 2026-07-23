@@ -99,7 +99,7 @@ export function SocketPanel({ type = 'socket.io', messages, isConnected, onEmit,
       <div className="panel" style={{ height: '200px', display: 'flex', flexDirection: 'column', padding: '10px' }}>
         <div style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
           {type === 'socket.io' && (
-            <input
+            <input autoCapitalize="none" autoComplete="off" autoCorrect="off" spellCheck={false}
               className="input small"
               style={{ width: '200px', flexShrink: 0 }}
               placeholder="Event name (e.g. 'message')"
