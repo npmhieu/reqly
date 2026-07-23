@@ -19,6 +19,7 @@ import {
   Settings,
   MoreHorizontal,
   Pencil,
+  Plug,
 } from "lucide-react";
 import "./App.css";
 import { useTheme } from "./components/ThemeProvider";
@@ -42,6 +43,10 @@ import CodeMirror from '@uiw/react-codemirror';
 import { json } from '@codemirror/lang-json';
 import { oneDark } from '@codemirror/theme-one-dark';
 import { Modal } from "./components/Modal";
+import { RequestTab } from "./components/RequestTab";
+import { SocketPanel } from "./components/SocketPanel";
+import { useSocketIO } from "./hooks/useSocketIO";
+import { useWebSocket } from "./hooks/useWebSocket";
 
 const PAGE_SIZE = 50;
 const MAX_URL_TOOLTIP_LENGTH = 500;
@@ -125,10 +130,20 @@ function ThemeModeToggle() {
 
 export default function App() {
   const { theme } = useTheme();
+
+  const [tabs, setTabs] = useState<{ id: string, name: string, initialHistoryItem?: RequestHistoryItem, forceKey?: string }[]>([
+    { id: crypto.randomUUID(), name: "Untitled Request" }
+  ]);
+  const [activeTabId, setActiveTabId] = useState<string>(tabs[0]?.id || "");
+  const [globalImportText, setGlobalImportText] = useState("");
+
   const [url, setUrl] = useState("https://httpbin.org/get");
   const [method, setMethod] = useState("GET");
   const [headers, setHeaders] = useState<HeaderRow[]>([
     { enabled: true, key: "Accept", value: "application/json" },
+    { enabled: true, key: "", value: "" },
+  ]);
+  const [params, setParams] = useState<HeaderRow[]>([
     { enabled: true, key: "", value: "" },
   ]);
   const [bodyType, setBodyType] = useState<"raw" | "form-data">("raw");
@@ -144,6 +159,9 @@ export default function App() {
   const [response, setResponse] = useState<ResponseState | null>(null);
   const activeRequestIdRef = useRef<string | null>(null);
   const requestWasCancelledRef = useRef(false);
+
+  const socketIO = useSocketIO();
+  const webSocket = useWebSocket();
 
   const [history, setHistory] = useState<RequestHistoryItem[]>([]);
   const [historyPage, setHistoryPage] = useState(1);
@@ -207,14 +225,6 @@ export default function App() {
     };
   }
 
-  const startResize = (e: React.MouseEvent) => {
-    e.preventDefault();
-    isDraggingRef.current = true;
-    setIsResizing(true);
-    document.body.style.cursor = 'ns-resize';
-    if (handleMouseMoveRef.current) document.addEventListener('mousemove', handleMouseMoveRef.current);
-    if (stopResizeRef.current) document.addEventListener('mouseup', stopResizeRef.current);
-  };
 
   useEffect(() => {
     const handleEsc = (e: KeyboardEvent) => {
@@ -242,39 +252,12 @@ export default function App() {
     }
   }, [theme]);
 
-  const generateCurl = useCallback(() => {
-    let curlStr = `curl -X ${method} '${url}'`;
-    
-    headers.forEach(h => {
-      if (h.enabled && h.key) {
-        curlStr += ` \\\n  -H '${h.key}: ${h.value.replace(/'/g, "'\\''")}'`;
-      }
-    });
-
-    if (method !== 'GET' && method !== 'HEAD') {
-      if (bodyType === 'raw' && body) {
-        curlStr += ` \\\n  -d '${body.replace(/'/g, "'\\''")}'`;
-      } else if (bodyType === 'form-data') {
-        formData.forEach(f => {
-          if (f.key) {
-            if (f.type === 'text') {
-              curlStr += ` \\\n  -F '${f.key}=${f.value.replace(/'/g, "'\\''")}'`;
-            } else {
-              curlStr += ` \\\n  -F '${f.key}=@${f.value.replace(/'/g, "'\\''")}'`;
-            }
-          }
-        });
-      }
-    }
-    
-    return curlStr;
-  }, [method, url, headers, bodyType, body, formData]);
 
   const [showImport, setShowImport] = useState(false);
   const [importText, setImportText] = useState("");
   const [importError, setImportError] = useState<string | null>(null);
 
-  const [reqTab, setReqTab] = useState<"headers" | "body">("headers");
+  const [reqTab, setReqTab] = useState<"params" | "headers" | "body">("headers");
   const [respTab, setRespTab] = useState<"body" | "headers">("body");
   const [editingHistoryId, setEditingHistoryId] = useState<number | null>(null);
   const [editingTagsText, setEditingTagsText] = useState("");
@@ -366,90 +349,32 @@ export default function App() {
   }, [history, searchQuery]);
 
   const enabledHeaderCount = headers.filter((h) => h.enabled && h.key.trim()).length;
+  const enabledParamCount = params.filter((p) => p.enabled && p.key.trim()).length;
 
-  const handleSend = async () => {
-    if (isLoading) return;
-    if (!url.trim()) {
-      setError("URL is required");
-      return;
-    }
-
-    const requestID = crypto.randomUUID();
-    activeRequestIdRef.current = requestID;
-    requestWasCancelledRef.current = false;
-    setIsLoading(true);
-    setIsCancelling(false);
-    setError(null);
-    setResponse(null);
-
-    const filteredHeaders: Record<string, string> = {};
-    headers.forEach((h) => {
-      if (h.enabled && h.key.trim()) {
-        filteredHeaders[h.key.trim()] = h.value;
-      }
+  useEffect(() => {
+    const idx = url.indexOf('?');
+    const qs = idx === -1 ? "" : url.substring(idx + 1);
+    const searchParams = new URLSearchParams(qs);
+    const newParams: HeaderRow[] = [];
+    searchParams.forEach((value, key) => {
+      newParams.push({ enabled: true, key, value });
     });
+    newParams.push({ enabled: true, key: "", value: "" });
 
-    if (isEditingDraftTags) {
-      setIsEditingDraftTags(false);
+    // Deep equal check to prevent loop
+    const isSame = newParams.length === params.length && newParams.every((p, i) => p.key === params[i].key && p.value === params[i].value && p.enabled === params[i].enabled);
+    if (!isSame) {
+      setParams(newParams);
     }
-    const parsedTags = tags
-      .split(",")
-      .map((t) => t.trim())
-      .filter(Boolean);
+  }, [url]);
 
-    const validFormData = formData.filter(f => f.key.trim());
 
-    try {
-      const reqPayload = new engine.HTTPRequest({
-        url: url.trim(),
-        method,
-        headers: filteredHeaders,
-        body_type: bodyType,
-        body: body,
-        form_data: validFormData,
-      });
-      const resp = await ExecuteRequest(reqPayload, parsedTags, requestID);
 
-      setResponse(resp as ResponseState);
-      setRespTab("body");
-      reloadHistory();
-      void loadTags();
-    } catch (err: any) {
-      if (!requestWasCancelledRef.current) {
-        setError(err?.toString() || "An unexpected error occurred");
-      }
-    } finally {
-      if (activeRequestIdRef.current === requestID) {
-        activeRequestIdRef.current = null;
-        setIsLoading(false);
-        setIsCancelling(false);
-      }
-    }
-  };
 
-  const handleCancelRequest = () => {
-    const requestID = activeRequestIdRef.current;
-    if (!requestID || isCancelling) return;
 
-    requestWasCancelledRef.current = true;
-    setIsCancelling(true);
-    void CancelRequest(requestID);
-  };
 
-  const handleHeaderChange = (index: number, field: keyof HeaderRow, value: string | boolean) => {
-    const updated = [...headers];
-    updated[index] = { ...updated[index], [field]: value };
-    setHeaders(updated);
-  };
 
-  const addHeader = () => {
-    setHeaders((current) => [...current, { enabled: true, key: "", value: "" }]);
-  };
 
-  const removeHeader = (index: number) => {
-    const updated = headers.filter((_, i) => i !== index);
-    setHeaders(updated.length ? updated : [{ enabled: true, key: "", value: "" }]);
-  };
 
   const handleFormDataChange = (index: number, field: keyof engine.FormDataItem, value: string) => {
     const updated = [...formData];
@@ -457,21 +382,7 @@ export default function App() {
     setFormData(updated);
   };
 
-  const removeFormData = (index: number) => {
-    const updated = formData.filter((_, i) => i !== index);
-    setFormData(updated.length ? updated : [new engine.FormDataItem({ key: "", value: "", type: "text" })]);
-  };
 
-  const handleSelectFile = async (index: number) => {
-    try {
-      const filePath = await SelectFile();
-      if (filePath) {
-        handleFormDataChange(index, "value", filePath);
-      }
-    } catch (err) {
-      console.error("SelectFile error", err);
-    }
-  };
 
   const handleDeleteHistory = async (id: number, event: React.MouseEvent) => {
     event.stopPropagation();
@@ -485,54 +396,13 @@ export default function App() {
   };
 
   const handleRerun = (item: RequestHistoryItem) => {
-    setUrl(item.url);
-    setMethod(item.method);
-    setBody(item.body || "");
-
-    try {
-      const parsedHeaders = JSON.parse(item.headers || "{}");
-      const rows: HeaderRow[] = Object.entries(parsedHeaders).map(([key, value]) => ({
-        enabled: true,
-        key,
-        value: value as string,
-      }));
-      rows.push({ enabled: true, key: "", value: "" });
-      setHeaders(rows);
-    } catch {
-      setHeaders([{ enabled: true, key: "", value: "" }]);
+    if (tabs.length < 5) {
+      const newId = crypto.randomUUID();
+      setTabs([...tabs, { id: newId, name: item.url, initialHistoryItem: item }]);
+      setActiveTabId(newId);
+    } else {
+      setTabs(tabs.map(t => t.id === activeTabId ? { ...t, name: item.url, initialHistoryItem: item, forceKey: crypto.randomUUID() } : t));
     }
-
-    setBodyType((item.body_type as "raw" | "form-data") || "raw");
-    try {
-      if (item.form_data) {
-        const parsedFormData = JSON.parse(item.form_data);
-        if (Array.isArray(parsedFormData) && parsedFormData.length > 0) {
-          setFormData(parsedFormData.map(f => new engine.FormDataItem(f)));
-        } else {
-          setFormData([new engine.FormDataItem({ key: "", value: "", type: "text" })]);
-        }
-      } else {
-        setFormData([new engine.FormDataItem({ key: "", value: "", type: "text" })]);
-      }
-    } catch {
-      setFormData([new engine.FormDataItem({ key: "", value: "", type: "text" })]);
-    }
-
-    setTags(item.tags?.join(", ") || "");
-
-    let parsedRespHeaders: Record<string, string> = {};
-    try {
-      parsedRespHeaders = JSON.parse(item.response_headers || "{}");
-    } catch {}
-
-    setResponse({
-      status: item.response_status,
-      status_text: `${item.response_status}`,
-      headers: parsedRespHeaders,
-      body: item.response_body,
-      duration_ms: item.duration_ms,
-    });
-    setError(null);
   };
 
   const handleImport = async () => {
@@ -549,17 +419,21 @@ export default function App() {
 
       if (!parsed) return;
 
-      setUrl(parsed.url || "");
-      setMethod(parsed.method || "GET");
-      setBody(parsed.body || "");
-
-      const rows: HeaderRow[] = Object.entries(parsed.headers || {}).map(([key, value]) => ({
-        enabled: true,
-        key,
-        value: value as string,
-      }));
-      rows.push({ enabled: true, key: "", value: "" });
-      setHeaders(rows);
+      handleRerun({
+        id: Date.now(),
+        url: parsed.url || "",
+        method: parsed.method || "GET",
+        headers: JSON.stringify(parsed.headers || {}),
+        body: parsed.body || "",
+        body_type: parsed.body_type || "raw",
+        form_data: parsed.form_data ? JSON.stringify(parsed.form_data) : "",
+        created_at: new Date().toISOString(),
+        response_status: 0,
+        response_body: "",
+        response_headers: "",
+        duration_ms: 0,
+        tags: []
+      });
 
       setShowImport(false);
       setImportText("");
@@ -599,14 +473,6 @@ export default function App() {
     }
   };
 
-  const getFormattedResponseBody = () => {
-    if (!response?.body) return "";
-    try {
-      return JSON.stringify(JSON.parse(response.body), null, 2);
-    } catch {
-      return response.body;
-    }
-  };
 
   const methodClass = (value: string) => `method-badge ${value.toLowerCase()}`;
   const statusClass = (status: number) => {
@@ -616,15 +482,9 @@ export default function App() {
     return "status-badge danger";
   };
 
-  const getTooltipText = (value: string, maxLength = MAX_URL_TOOLTIP_LENGTH) => {
-    return value.length > maxLength ? `${value.slice(0, maxLength)}...` : value;
-  };
 
-  const getHeaderValueSuggestions = (key: string) => {
-    return COMMON_HEADER_VALUES[key.trim().toLowerCase()] || [];
-  };
 
-  const canShowBody = ["POST", "PUT", "PATCH", "DELETE"].includes(method);
+  const canShowBody = ["POST", "PUT", "PATCH", "DELETE", "SOCKET.IO", "WEBSOCKET"].includes(method);
 
   return (
     <TooltipProvider delayDuration={300}>
@@ -648,7 +508,7 @@ export default function App() {
         {showImport && (
           <section className="panel import-panel">
             <div className="section-title">Paste cURL or .http Entry</div>
-            <textarea
+            <textarea autoCapitalize="off"
               className="textarea mono"
               rows={5}
               placeholder="curl -X POST https://api.example.com -H 'Content-Type: application/json' -d '{}'"
@@ -677,7 +537,7 @@ export default function App() {
           <div className="sidebar-filter">
           <div className="input-with-icon">
             <Search size={15} />
-            <input
+            <input autoCapitalize="off"
               className="input small"
               placeholder="Search loaded history..."
               value={searchQuery}
@@ -787,8 +647,12 @@ export default function App() {
                   </div>
                   <div className="history-meta">
                     <div className="history-meta-left">
-                      <span className={statusClass(item.response_status)}>{item.response_status}</span>
-                      <span>{item.duration_ms} ms</span>
+                      {item.method !== "SOCKET.IO" && item.method !== "WEBSOCKET" && (
+                        <>
+                          <span className={statusClass(item.response_status)}>{item.response_status}</span>
+                          <span>{item.duration_ms} ms</span>
+                        </>
+                      )}
                       <Tooltip>
                         <TooltipTrigger asChild>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '4px', minWidth: 0 }}>
@@ -817,7 +681,7 @@ export default function App() {
 
                   {editingHistoryId === item.id && (
                     <form className="tag-editor" onSubmit={(event) => saveEditedTags(item.id, event)} onClick={(event) => event.stopPropagation()}>
-                      <input
+                      <input autoCapitalize="off"
                         className="input small"
                         value={editingTagsText}
                         onChange={(event) => setEditingTagsText(event.target.value)}
@@ -853,443 +717,78 @@ export default function App() {
         </div>
       </aside>
 
-      <main className="workspace">
-        <section className="request-bar panel">
-          <div className="request-line">
-            <div className="select-wrap">
-              <select className="select" value={method} onChange={(event) => setMethod(event.target.value)}>
-                {["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"].map((item) => (
-                  <option key={item} value={item}>
-                    {item}
-                  </option>
-                ))}
-              </select>
-              <ChevronDown size={15} />
-            </div>
-            <input
-              className="input url-input"
-              placeholder="https://api.example.com/v1/resource"
-              value={url}
-              onChange={(event) => setUrl(event.target.value)}
-              onKeyDown={(event) => event.key === "Enter" && handleSend()}
-            />
-            <button
-              className={`button ${isLoading ? "outline" : "primary"} send-button`}
-              onClick={isLoading ? handleCancelRequest : handleSend}
-              disabled={isCancelling}
+
+      <main className="workspace" style={{ display: 'flex', flex: 1, flexDirection: 'column', height: '100vh', overflow: 'hidden', padding: 0 }}>
+        <div className="tab-bar" style={{ display: 'flex', background: 'var(--background-alt)', borderBottom: '1px solid var(--border)', padding: '0 8px', overflowX: 'auto', flexShrink: 0, height: '36px' }}>
+          {tabs.map((tab, idx) => (
+            <div 
+              key={tab.id} 
+              className={`tab-item ${activeTabId === tab.id ? 'active' : ''}`}
+              style={{
+                padding: '0 12px',
+                cursor: 'pointer',
+                borderBottom: activeTabId === tab.id ? '2px solid var(--primary)' : '2px solid transparent',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                fontSize: '13px',
+                minWidth: '120px',
+                maxWidth: '200px',
+                whiteSpace: 'nowrap'
+              }}
+              onClick={() => setActiveTabId(tab.id)}
             >
-              {isLoading ? (isCancelling ? <Loader2 size={16} className="spin" /> : <X size={16} />) : <Send size={16} />}
-              {isLoading ? (isCancelling ? "Cancelling" : "Cancel") : "Send"}
-            </button>
-          </div>
-
-          <form 
-            className="tag-input-row"
-            onSubmit={(e) => {
-              e.preventDefault();
-              setIsEditingDraftTags(false);
-              (document.activeElement as HTMLElement)?.blur();
-            }}
-            onBlur={(e) => {
-              if (!e.currentTarget.contains(e.relatedTarget as Node)) {
-                setIsEditingDraftTags(false);
-              }
-            }}
-          >
-            <Tag size={15} />
-            <input
-              className="input small"
-              placeholder="Associate tags: auth, production"
-              value={tags}
-              onFocus={() => {
-                if (!isEditingDraftTags) {
-                  setIsEditingDraftTags(true);
-                  setOriginalTags(tags);
-                }
-              }}
-              onChange={(event) => setTags(event.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Escape") {
-                  e.preventDefault();
-                  setIsEditingDraftTags(false);
-                  setTags(originalTags);
-                  e.currentTarget.blur();
-                }
-              }}
-            />
-            {isEditingDraftTags && (
-              <div style={{ display: 'flex', gap: '4px' }}>
-                <button 
-                  className="button outline small" 
-                  type="button" 
-                  onClick={() => {
-                    setIsEditingDraftTags(false);
-                    setTags(originalTags);
-                  }}
-                >
-                  Cancel
-                </button>
-                <button 
-                  className="button primary small" 
-                  type="submit"
-                >
-                  Save
-                </button>
-              </div>
-            )}
-            {!isEditingDraftTags && (
-              <TooltipProvider delayDuration={300}>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <button type="button" className="button ghost small" onClick={() => setShowCurl(true)} style={{ marginLeft: 'auto' }}>
-                      <Code size={16} />
-                    </button>
-                  </TooltipTrigger>
-                  <TooltipContent side="top">Show equivalent cURL</TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-            )}
-          </form>
-        </section>
-
-        <section ref={reqConfigRef} className="panel request-config">
-          <div className="request-config-head">
-            <div className="tabs">
-              <button className={reqTab === "headers" ? "active" : ""} onClick={() => setReqTab("headers")}>
-                Headers ({enabledHeaderCount})
+              <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{tab.name}</span>
+              <button 
+                className="icon-button" 
+                style={{ marginLeft: 'auto', opacity: tabs.length > 1 ? 1 : 0.5 }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (tabs.length === 1) return;
+                  const newTabs = tabs.filter(t => t.id !== tab.id);
+                  setTabs(newTabs);
+                  if (activeTabId === tab.id) {
+                    setActiveTabId(newTabs[idx - 1]?.id || newTabs[0]?.id || "");
+                  }
+                }}
+              >
+                <X size={12} />
               </button>
-              {canShowBody && (
-                <button className={reqTab === "body" ? "active" : ""} onClick={() => setReqTab("body")}>
-                  Body
-                </button>
-              )}
             </div>
-            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-              {reqTab === "headers" && (
-                <button className="button outline small" onClick={addHeader}>
-                  <Plus size={14} />
-                  Add header
-                </button>
-              )}
-            </div>
-          </div>
-
-          {reqTab === "headers" && (
-            <>
-              <datalist id="common-header-names">
-                {COMMON_HEADER_NAMES.map((name) => (
-                  <option key={name} value={name} />
-                ))}
-              </datalist>
-              <table className="headers-table">
-                <thead>
-                  <tr>
-                    <th style={{ width: '36px', textAlign: "center" }}>On</th>
-                    <th style={{ width: '25%' }}>Key</th>
-                    <th>Value</th>
-                    <th style={{ width: '36px' }}></th>
-                  </tr>
-                </thead>
-                <tbody>
-                {headers.map((row, index) => {
-                  const valueSuggestions = getHeaderValueSuggestions(row.key);
-                  const valueListId = `common-header-values-${index}`;
-
-                  return (
-                    <tr className={row.enabled ? "header-row" : "header-row disabled"} key={index}>
-                      <td style={{ textAlign: "center" }}>
-                        <label className="checkbox" style={{ display: 'flex', justifyContent: 'center' }}>
-                          <input
-                            type="checkbox"
-                            checked={row.enabled}
-                            onChange={(event) => handleHeaderChange(index, "enabled", event.target.checked)}
-                          />
-                          <span>{row.enabled && <Check size={13} />}</span>
-                        </label>
-                      </td>
-                      <td>
-                        <input
-                          className="input small"
-                          list="common-header-names"
-                          placeholder="Content-Type"
-                          value={row.key}
-                          onChange={(event) => handleHeaderChange(index, "key", event.target.value)}
-                        />
-                      </td>
-                      <td>
-                        {valueSuggestions.length > 0 && (
-                          <datalist id={valueListId}>
-                            {valueSuggestions.map((value) => (
-                              <option key={value} value={value} />
-                            ))}
-                          </datalist>
-                        )}
-                        <input
-                          className="input small"
-                          list={valueSuggestions.length > 0 ? valueListId : undefined}
-                          placeholder="application/json"
-                          value={row.value}
-                          onChange={(event) => handleHeaderChange(index, "value", event.target.value)}
-                          onKeyDown={(event) => {
-                            if (event.key === 'Tab' && index === headers.length - 1 && (row.key || row.value)) {
-                              setHeaders((current) => [...current, { enabled: true, key: "", value: "" }]);
-                            }
-                          }}
-                        />
-                      </td>
-                      <td style={{ textAlign: "center" }}>
-                        <button className="icon-button" onClick={() => removeHeader(index)}>
-                          <X size={15} />
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })}
-                </tbody>
-              </table>
-            </>
+          ))}
+          {tabs.length < 5 && (
+            <button 
+              className="icon-button" 
+              style={{ margin: 'auto 8px' }} 
+              onClick={() => {
+                const newId = crypto.randomUUID();
+                setTabs([...tabs, { id: newId, name: "Untitled Request" }]);
+                setActiveTabId(newId);
+              }}
+            >
+              <Plus size={14} />
+            </button>
           )}
-
-          {reqTab === "body" && (
-            <div className="request-body-wrapper" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              <div className="tabs small" style={{ alignSelf: "flex-start" }}>
-                <button className={bodyType === "raw" ? "active" : ""} onClick={() => setBodyType("raw")}>Raw</button>
-                <button className={bodyType === "form-data" ? "active" : ""} onClick={() => setBodyType("form-data")}>Form-Data</button>
-              </div>
-
-              {bodyType === "raw" ? (
-                <div style={{ position: 'relative' }}>
-                  <button className="button ghost small" style={{ position: 'absolute', top: '8px', right: '8px', zIndex: 10 }} onClick={() => {
-                    try {
-                      const parsed = JSON.parse(body);
-                      setBody(JSON.stringify(parsed, null, 2));
-                    } catch {}
-                  }}>Format</button>
-                  <div className="code-editor-container">
-                    <CodeMirror
-                      value={body}
-                      height="auto"
-                      minHeight="100px"
-                      theme={isDark ? oneDark : 'light'}
-                      extensions={[json()]}
-                      onChange={(val) => setBody(val)}
-                      basicSetup={{
-                        lineNumbers: true,
-                        foldGutter: true,
-                        highlightActiveLine: false,
-                        highlightActiveLineGutter: false,
-                      }}
-                      style={{
-                        fontSize: 13,
-                        fontFamily: '"SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace',
-                        backgroundColor: 'transparent'
-                      }}
-                    />
-                  </div>
-                </div>
-              ) : (
-                <div style={{ display: "grid", gridTemplateColumns: "minmax(120px, 1fr) 80px minmax(180px, 2fr) 30px", columnGap: "8px", rowGap: "6px", alignItems: "center", maxHeight: "230px", overflowY: "auto" }}>
-                  <div className="headers-head">Key</div>
-                  <div className="headers-head">Type</div>
-                  <div className="headers-head">Value</div>
-                  <div className="headers-head" />
-                  {formData.map((row, index) => (
-                    <div style={{ display: "contents" }} key={index}>
-                      <input
-                        className="input small"
-                        placeholder="Key"
-                        value={row.key}
-                        onChange={(event) => handleFormDataChange(index, "key", event.target.value)}
-                      />
-                      <select 
-                        className="select small" 
-                        value={row.type} 
-                        onChange={(event) => handleFormDataChange(index, "type", event.target.value)}
-                        style={{ padding: '0 4px', fontSize: '12px' }}
-                      >
-                        <option value="text">Text</option>
-                        <option value="file">File</option>
-                      </select>
-                      <div style={{ display: 'flex', gap: '4px' }}>
-                        <input
-                          className="input small"
-                          placeholder={row.type === "file" ? "Select a file..." : "Value"}
-                          value={row.value}
-                          onChange={(event) => handleFormDataChange(index, "value", event.target.value)}
-                          onKeyDown={(event) => {
-                            if (event.key === 'Tab' && index === formData.length - 1 && (row.key || row.value)) {
-                              setFormData((current) => [...current, new engine.FormDataItem({ key: "", value: "", type: "text" })]);
-                            }
-                          }}
-                        />
-                        {row.type === "file" && (
-                          <button className="button outline small" style={{ flexShrink: 0 }} onClick={() => handleSelectFile(index)}>Browse</button>
-                        )}
-                      </div>
-                      <button className="icon-button" onClick={() => removeFormData(index)}>
-                        <X size={15} />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-        </section>
-
-        <div 
-          className={`resizer-horizontal ${isResizing ? 'dragging' : ''}`} 
-          onMouseDown={startResize} 
-          title="Drag to resize"
-        />
-
-        <section className="panel response-panel">
-          <div className="response-head">
-            <h2>Response</h2>
-            {response && (
-              <div className="response-meta">
-                <span className={statusClass(response.status)}>
-                  {response.status} {response.status_text?.replace(response.status.toString(), '').trim()}
-                </span>
-                <span className="latency">{response.duration_ms} ms</span>
-              </div>
-            )}
-          </div>
-
-          <div className="response-content">
-            {error && (
-              <div className="error-box">
-                <strong>Request Failed</strong>
-                <pre>{error}</pre>
-              </div>
-            )}
-
-            {!response && !error && !isLoading && (
-              <div className="empty-state">
-                <Send size={38} />
-                <h3>No Active Session</h3>
-                <p>Type a URL and send it, or select an item from history.</p>
-              </div>
-            )}
-
-            {isLoading && (
-              <div className="empty-state">
-                <Loader2 size={38} className="spin" />
-                <h3>Connecting to endpoint</h3>
-                <p>Waiting for the remote target to return a response.</p>
-              </div>
-            )}
-
-            {response && !isLoading && (
-              <>
-                <div className="tabs response-tabs">
-                  <button className={respTab === "body" ? "active" : ""} onClick={() => setRespTab("body")}>
-                    Body
-                  </button>
-                  <button className={respTab === "headers" ? "active" : ""} onClick={() => setRespTab("headers")}>
-                    Headers ({Object.keys(response.headers || {}).length})
-                  </button>
-                </div>
-
-                <div className="response-view">
-                  {respTab === "body" && (
-                    response.body ? (
-                      <>
-                        <button className="button ghost small" style={{ position: 'absolute', top: '8px', right: '8px', zIndex: 10 }} onClick={() => navigator.clipboard.writeText(getFormattedResponseBody())}>
-                          <Copy size={16} />
-                        </button>
-                        <CodeMirror
-                          value={getFormattedResponseBody()}
-                          height="auto"
-                          theme={isDark ? oneDark : 'light'}
-                          extensions={[json()]}
-                          readOnly
-                          basicSetup={{
-                            lineNumbers: true,
-                            foldGutter: true,
-                            highlightActiveLine: false,
-                            highlightActiveLineGutter: false,
-                          }}
-                          style={{
-                            fontSize: 13,
-                            fontFamily: '"SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace',
-                            backgroundColor: 'transparent'
-                          }}
-                        />
-                      </>
-                    ) : (
-                      <div className="empty-state compact">No response body</div>
-                    )
-                  )}
-
-                  {respTab === "headers" && (
-                    <div className="response-headers">
-                      {Object.entries(response.headers || {}).map(([key, value]) => (
-                        <div key={key}>
-                          <span>{key}</span>
-                          <code>{value}</code>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </>
-            )}
-          </div>
-        </section>
+        </div>
+        
+        <div style={{ display: 'flex', flex: 1, position: 'relative', overflow: 'hidden' }}>
+          {tabs.map(tab => (
+            <RequestTab 
+              key={tab.id + (tab.forceKey || "")}
+              isActive={activeTabId === tab.id}
+              isDark={isDark}
+              initialHistoryItem={tab.initialHistoryItem}
+              globalImportText={activeTabId === tab.id ? globalImportText : ""}
+              onUpdateTitle={(title) => {
+                setTabs(current => current.map(t => t.id === tab.id ? { ...t, name: title } : t));
+              }}
+              reloadHistory={reloadHistory}
+              loadTags={loadTags}
+            />
+          ))}
+        </div>
       </main>
 
-      <div className={`curl-overlay ${showCurl ? 'show' : ''}`} onClick={() => setShowCurl(false)} />
-      {/* cURL Sidebar Overlay */}
-      <div className={`curl-sidebar ${showCurl ? 'open' : ''}`}>
-        <div className="curl-sidebar-head">
-          <h2>cURL Command</h2>
-          <button className="icon-button" onClick={() => setShowCurl(false)}>
-            <X size={18} />
-          </button>
-        </div>
-        <div className="curl-sidebar-body">
-          <button 
-            className="button outline small" 
-            style={{ marginBottom: '10px' }}
-            onClick={() => {
-              navigator.clipboard.writeText(generateCurl());
-              setIsCurlCopied(true);
-              setTimeout(() => setIsCurlCopied(false), 2000);
-            }}
-          >
-            {isCurlCopied ? (
-              <>
-                <Check size={14} />
-                Copied
-              </>
-            ) : (
-              <>
-                <Copy size={14} />
-                Copy cURL
-              </>
-            )}
-          </button>
-          <CodeMirror
-            value={generateCurl()}
-            height="auto"
-            theme={isDark ? oneDark : 'light'}
-            extensions={[json()]}
-            readOnly
-            basicSetup={{
-              lineNumbers: false,
-              foldGutter: false,
-              highlightActiveLine: false,
-              highlightActiveLineGutter: false,
-            }}
-            style={{
-              fontSize: 13,
-              fontFamily: '"SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace',
-              backgroundColor: 'transparent'
-            }}
-          />
-        </div>
-      </div>
     </div>
 
       <Modal
@@ -1313,7 +812,7 @@ export default function App() {
               <div key={tag.name} className="tag-manager-item">
                 {editingTagName === tag.name ? (
                   <div className="tag-edit-row">
-                    <input
+                    <input autoCapitalize="off"
                       autoFocus
                       className="input small"
                       value={editingTagDraft}
