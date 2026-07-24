@@ -150,7 +150,7 @@ export function RequestTab({ isActive, isDark, initialHistoryItem, onUpdateTitle
   const [params, setParams] = useState<HeaderRow[]>([
     { enabled: true, key: "", value: "" },
   ]);
-  const [bodyType, setBodyType] = useState<"raw" | "form-data">("raw");
+  const [bodyType, setBodyType] = useState<"raw" | "form-data" | "x-www-form-urlencoded">("raw");
   const [body, setBody] = useState("");
   const [formData, setFormData] = useState<engine.FormDataItem[]>([
     new engine.FormDataItem({ key: "", value: "", type: "text" })
@@ -192,7 +192,7 @@ export function RequestTab({ isActive, isDark, initialHistoryItem, onUpdateTitle
     } catch {
       setHeaders([{ enabled: true, key: "", value: "" }]);
     }
-    setBodyType((item.body_type as "raw" | "form-data") || "raw");
+    setBodyType((item.body_type as "raw" | "form-data" | "x-www-form-urlencoded") || "raw");
     try {
       if (item.form_data) {
         const parsedFormData = JSON.parse(item.form_data);
@@ -333,6 +333,12 @@ export function RequestTab({ isActive, isDark, initialHistoryItem, onUpdateTitle
             }
           }
         });
+      } else if (bodyType === 'x-www-form-urlencoded') {
+        formData.forEach(f => {
+          if (f.key && f.type === 'text') {
+            curlStr += ` \\\n  --data-urlencode '${f.key}=${f.value.replace(/'/g, "'\\''")}'`;
+          }
+        });
       }
     }
     
@@ -394,6 +400,14 @@ export function RequestTab({ isActive, isDark, initialHistoryItem, onUpdateTitle
 
   const enabledHeaderCount = headers.filter((h) => h.enabled && h.key.trim()).length;
   const enabledParamCount = params.filter((p) => p.enabled && p.key.trim()).length;
+
+  const enabledBodyCount = useMemo(() => {
+    if (bodyType === 'raw' || method === 'SOCKET.IO' || method === 'WEBSOCKET') {
+      return body.trim() ? 1 : 0;
+    } else {
+      return formData.filter((f) => f.key.trim()).length;
+    }
+  }, [bodyType, body, formData, method]);
 
   useEffect(() => {
     const idx = url.indexOf('?');
@@ -798,7 +812,11 @@ export function RequestTab({ isActive, isDark, initialHistoryItem, onUpdateTitle
               )}
               {canShowBody && (
                 <button className={reqTab === "body" ? "active" : ""} onClick={() => setReqTab("body")}>
-                  {method === "SOCKET.IO" ? "Options (JSON)" : method === "WEBSOCKET" ? "Protocols (JSON Array)" : "Body"}
+                  {method === "SOCKET.IO" 
+                    ? (enabledBodyCount > 0 ? `Options (${enabledBodyCount})` : "Options") 
+                    : method === "WEBSOCKET" 
+                      ? (enabledBodyCount > 0 ? `Protocols (${enabledBodyCount})` : "Protocols") 
+                      : (enabledBodyCount > 0 ? `Body (${enabledBodyCount})` : "Body")}
                 </button>
               )}
               <button className={reqTab === "params" ? "active" : ""} onClick={() => setReqTab("params")}>
@@ -956,8 +974,9 @@ export function RequestTab({ isActive, isDark, initialHistoryItem, onUpdateTitle
             <div className="request-body-wrapper" style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
               {method !== "SOCKET.IO" && method !== "WEBSOCKET" && (
                 <div className="tabs small" style={{ alignSelf: "flex-start" }}>
-                  <button className={bodyType === "raw" ? "active" : ""} onClick={() => setBodyType("raw")}>Raw</button>
-                  <button className={bodyType === "form-data" ? "active" : ""} onClick={() => setBodyType("form-data")}>Form-Data</button>
+                  <button className={bodyType === "raw" ? "active" : ""} onClick={() => setBodyType("raw")}>raw</button>
+                  <button className={bodyType === "form-data" ? "active" : ""} onClick={() => setBodyType("form-data")}>form-data</button>
+                  <button className={bodyType === "x-www-form-urlencoded" ? "active" : ""} onClick={() => setBodyType("x-www-form-urlencoded")}>x-www-form-urlencoded</button>
                 </div>
               )}
 
@@ -1020,9 +1039,10 @@ export function RequestTab({ isActive, isDark, initialHistoryItem, onUpdateTitle
                         value={row.type} 
                         onChange={(event) => handleFormDataChange(index, "type", event.target.value)}
                         style={{ padding: '0 4px', fontSize: '12px' }}
+                        disabled={bodyType === "x-www-form-urlencoded"}
                       >
                         <option value="text">Text</option>
-                        <option value="file">File</option>
+                        {bodyType !== "x-www-form-urlencoded" && <option value="file">File</option>}
                       </select>
                       <div style={{ display: 'flex', gap: '4px' }}>
                         <input autoCapitalize="none" spellCheck={false} autoComplete="off" autoCorrect="off"

@@ -2,6 +2,7 @@ package engine
 
 import (
 	"errors"
+	"net/url"
 	"strings"
 
 	"github.com/google/shlex"
@@ -103,7 +104,24 @@ func ParseCurl(curlCommand string) (*HTTPRequest, error) {
 			}
 		case "-d", "--data", "--data-raw", "--data-binary", "--data-ascii", "--data-urlencode":
 			if i+1 < len(tokens) {
-				req.Body = tokens[i+1]
+				val := tokens[i+1]
+				if token == "--data-urlencode" {
+					if strings.Contains(val, "=") {
+						parts := strings.SplitN(val, "=", 2)
+						if parts[0] == "" {
+							val = url.QueryEscape(parts[1])
+						} else {
+							val = parts[0] + "=" + url.QueryEscape(parts[1])
+						}
+					} else if !strings.Contains(val, "@") {
+						val = url.QueryEscape(val)
+					}
+				}
+				if req.Body != "" {
+					req.Body += "&" + val
+				} else {
+					req.Body = val
+				}
 				hasBody = true
 				i++
 			}
@@ -142,6 +160,39 @@ func ParseCurl(curlCommand string) (*HTTPRequest, error) {
 
 	if hasBody && req.Method == "GET" {
 		req.Method = "POST"
+	}
+
+	contentType := ""
+	for k, v := range req.Headers {
+		if strings.ToLower(k) == "content-type" {
+			contentType = strings.ToLower(v)
+			break
+		}
+	}
+
+	// Default curl content type for POST with body is application/x-www-form-urlencoded
+	if hasBody && contentType == "" {
+		contentType = "application/x-www-form-urlencoded"
+		req.Headers["Content-Type"] = contentType
+	}
+
+	if strings.Contains(contentType, "application/x-www-form-urlencoded") && req.Body != "" {
+		req.BodyType = "x-www-form-urlencoded"
+		parsedVals, err := url.ParseQuery(req.Body)
+		if err == nil {
+			for k, v := range parsedVals {
+				for _, val := range v {
+					req.FormData = append(req.FormData, FormDataItem{
+						Key:   k,
+						Value: val,
+						Type:  "text",
+					})
+				}
+			}
+			req.Body = ""
+		}
+	} else if hasBody {
+		req.BodyType = "raw"
 	}
 
 	return req, nil

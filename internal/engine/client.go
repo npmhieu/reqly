@@ -6,6 +6,7 @@ import (
 	"io"
 	"mime/multipart"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -69,6 +70,15 @@ func ExecuteRequest(ctx context.Context, req *HTTPRequest) (*HTTPResponse, error
 			writer.Close()
 			bodyReader = bodyBuffer
 			contentType = writer.FormDataContentType()
+		} else if req.BodyType == "x-www-form-urlencoded" {
+			data := url.Values{}
+			for _, item := range req.FormData {
+				if item.Type == "text" {
+					data.Add(item.Key, item.Value)
+				}
+			}
+			bodyReader = strings.NewReader(data.Encode())
+			contentType = "application/x-www-form-urlencoded"
 		} else if req.Body != "" {
 			bodyReader = bytes.NewBufferString(req.Body)
 		}
